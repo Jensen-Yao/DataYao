@@ -4,6 +4,8 @@ DataYao 是一个双端离线的动态二维码传输工具：发送端把文件
 
 **在线体验：** [jensen-yao.github.io/DataYao](https://jensen-yao.github.io/DataYao/)
 
+**最新发布：** [Windows Portable ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.0/DataYao-0.2.0-Windows-x64-Portable.zip) · [Android Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.0/DataYao-Receiver-0.2.0-release.apk)
+
 ## 特性
 
 - **双端离线**：页面首次加载后由 Service Worker 缓存；光学传输阶段没有网络请求。
