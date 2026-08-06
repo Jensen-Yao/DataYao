@@ -1,0 +1,37 @@
+name: Build Windows Portable
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  portable:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build portable executable
+        run: npm run package:portable
+      - name: Upload portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: datayao-windows-portable
+          path: artifacts/desktop/*.zip
+          if-no-files-found: error
+      - name: Attest portable package
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: artifacts/desktop/*.zip

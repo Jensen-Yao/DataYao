@@ -20,6 +20,41 @@ DataYao 是一个双端离线的动态二维码传输工具：发送端把文件
 3. 接收端允许摄像头权限，优先使用后置摄像头，对准发送端二维码区域。
 4. 看到“接收完成”后，文本可复制，文件可保存。
 
+## 便携版与 Android 接收端
+
+### Windows 双端便携版
+
+便携版包含发送和接收两个模式，解压后直接运行 `DataYao.exe`，不写入安装目录，也不要求 Node.js。它把同一套离线 Web 核心放进 Electron Runtime，Windows 摄像头权限由系统首次启动时请求。
+
+本地生成：
+
+```bash
+npm run package:portable
+```
+
+产物位于 `artifacts/desktop/`：`DataYao-<version>-Windows-x64-Portable.zip`。该包体积较大，因为包含 Chromium 运行时；这是为了保证解压即用，不依赖用户预装浏览器。
+
+### Android 接收端 APK
+
+Android 工程使用 Capacitor，构建时设置 `VITE_RECEIVER_ONLY=1`，启动后直接进入接收页并隐藏发送入口，只申请摄像头权限。仓库的 `.github/workflows/android.yml` 会在 GitHub Actions 中安装 Android SDK、构建 release APK、使用 GitHub Actions Secrets 中的 JKS 发布密钥签名，并生成 GitHub artifact provenance。
+
+需要配置的仓库 Secrets：
+
+```text
+ANDROID_KEYSTORE_BASE64
+ANDROID_KEYSTORE_PASSWORD
+ANDROID_KEY_ALIAS
+ANDROID_KEY_PASSWORD
+```
+
+构建工作流支持手动触发或推送 `v*` 标签。下载 APK 后可以用 GitHub CLI 验证 provenance：
+
+```bash
+gh attestation verify DataYao-Receiver-release.apk -R Jensen-Yao/DataYao
+```
+
+APK 的签名用于确认发布者和升级来源，不会对光学传输内容加密；传输协议仍按设计保持明文并使用 SHA-256 做完整性校验。
+
 ### 摄像头与 HTTPS
 
 浏览器通常只会在安全上下文中开放摄像头权限。GitHub Pages 默认提供 HTTPS；本地开发请使用 `localhost`，或通过 HTTPS 反向代理访问。发送端可以完全离线运行，接收端第一次打开页面仍需要先把应用资源缓存到本机。
@@ -53,6 +88,8 @@ npm run typecheck
 npm test
 npm run build
 npm run preview
+npm run package:portable
+npm run build:android
 ```
 
 ## 目录结构
@@ -60,8 +97,10 @@ npm run preview
 ```text
 src/components/  发送端和接收端 UI
 src/core/        QR、协议、CRC/SHA-256、LT fountain code
+desktop/         Electron 主进程和 Windows 便携包脚本
+android/         Capacitor Android 接收端工程
 public/          PWA 静态资源和品牌图标
-.github/workflows 部署 GitHub Pages 的工作流
+.github/workflows Pages、Windows Portable、Android APK 工作流
 ```
 
 ## 限制与隐私

@@ -1,5 +1,12 @@
 node_modules/
 dist/
+release/
+artifacts/
+.android-sdk/
+.jdk21/
+.jdk21-clean/
+.jdk21-tar/
+.gradle/
 .vite/
 coverage/
 *.log

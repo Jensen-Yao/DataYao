@@ -4,7 +4,8 @@ import { SenderView } from "./components/SenderView";
 import { ReceiverView } from "./components/ReceiverView";
 
 export function App() {
-  const [mode, setMode] = useState<"send" | "receive">("send");
+  const receiverOnly = import.meta.env.VITE_RECEIVER_ONLY === "1";
+  const [mode, setMode] = useState<"send" | "receive">(receiverOnly ? "receive" : "send");
   const [online, setOnline] = useState(navigator.onLine);
 
   useEffect(() => {
@@ -25,9 +26,11 @@ export function App() {
           <span>DataYao</span>
         </a>
         <nav className="mode-tabs" aria-label="传输模式">
-          <button type="button" className={mode === "send" ? "active" : ""} onClick={() => setMode("send")}>
-            <Send size={17} /> 发送
-          </button>
+          {!receiverOnly && (
+            <button type="button" className={mode === "send" ? "active" : ""} onClick={() => setMode("send")}>
+              <Send size={17} /> 发送
+            </button>
+          )}
           <button type="button" className={mode === "receive" ? "active" : ""} onClick={() => setMode("receive")}>
             <ScanLine size={17} /> 接收
           </button>
@@ -43,7 +46,7 @@ export function App() {
       <main>{mode === "send" ? <SenderView /> : <ReceiverView />}</main>
 
       <footer>
-        <span>DataYao v0.1.0</span>
+        <span>DataYao v0.2.0</span>
         <span>标准 QR · LT Fountain · SHA-256</span>
       </footer>
     </div>

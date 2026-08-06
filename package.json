@@ -1,11 +1,14 @@
 {
   "name": "datayao",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Fast, stable offline file transfer over animated QR codes.",
   "private": true,
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:android": "cross-env VITE_RECEIVER_ONLY=1 npm run build && npx cap sync android",
+    "build:desktop": "npm run build",
+    "package:portable": "npm run build:desktop && node desktop/package-portable.cjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -19,8 +22,11 @@
   ],
   "author": "Jensen Yao",
   "license": "MIT",
+  "main": "desktop/main.cjs",
   "type": "module",
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "fflate": "^0.8.3",
     "jsqr": "^1.4.0",
     "lucide-react": "^1.29.0",
@@ -29,15 +35,43 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.0",
     "@playwright/test": "^1.62.1",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
+    "cross-env": "^10.0.0",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
     "jsdom": "^29.1.1",
     "typescript": "^7.0.2",
     "vite": "^8.2.1",
     "vite-plugin-pwa": "^1.3.0",
     "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "com.datayao.transfer",
+    "productName": "DataYao",
+    "asar": true,
+    "directories": {
+      "output": "artifacts/desktop"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "DataYao-${version}-Windows-${arch}-Portable.${ext}"
+    }
   }
 }
