@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="DataYao">
+  <rect width="128" height="128" rx="28" fill="#0b1118"/>
+  <path d="M27 39h28v18H45v32H27V39Zm46 0h28v50H83V57H73V39Z" fill="#63d8ff"/>
+  <path d="M27 92h74" stroke="#ff8f70" stroke-width="8" stroke-linecap="round"/>
+</svg>

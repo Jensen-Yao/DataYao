@@ -1,0 +1,1 @@
+{"name":"DataYao Offline Transfer","short_name":"DataYao","description":"Fast offline file transfer over animated QR codes.","start_url":"./","display":"standalone","background_color":"#0b1118","theme_color":"#0b1118","lang":"en","scope":"./","icons":[{"src":"datayao-mark.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
