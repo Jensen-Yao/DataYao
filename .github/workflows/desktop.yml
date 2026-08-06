@@ -25,6 +25,8 @@ jobs:
         run: npm ci
       - name: Build portable executable
         run: npm run package:portable
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
       - name: Upload portable package
         uses: actions/upload-artifact@v4
         with:

@@ -10,7 +10,22 @@ const appDir = path.join(portableDir, "resources", "app");
 const electronDir = path.join(root, "node_modules", "electron", "dist");
 const zipPath = path.join(outputRoot, `DataYao-${packageJson.version}-Windows-x64-Portable.zip`);
 
+async function ensureElectronRuntime() {
+  try {
+    await fs.access(path.join(electronDir, "electron.exe"));
+    return;
+  } catch {
+    const installer = path.join(root, "node_modules", "electron", "install.js");
+    const result = spawnSync(process.execPath, [installer], {
+      stdio: "inherit",
+      env: { ...process.env, ELECTRON_MIRROR: process.env.ELECTRON_MIRROR || "https://npmmirror.com/mirrors/electron/" },
+    });
+    if (result.status !== 0) throw new Error(`Electron runtime download failed with exit code ${result.status}`);
+  }
+}
+
 async function main() {
+  await ensureElectronRuntime();
   await fs.access(path.join(electronDir, "electron.exe"));
   await fs.access(path.join(root, "dist", "index.html"));
   await fs.rm(portableDir, { recursive: true, force: true });
@@ -43,4 +58,3 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
-
