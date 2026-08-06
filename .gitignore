@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-harmony/
 release/
 artifacts/
 .android-sdk/
@@ -9,6 +10,10 @@ artifacts/
 .gradle/
 .vite/
 coverage/
+*.p12
+*.p7b
+*.pem
+*.key
 *.log
 .DS_Store
 Thumbs.db

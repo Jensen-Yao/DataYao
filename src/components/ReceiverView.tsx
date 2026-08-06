@@ -15,6 +15,52 @@ interface ReceiveStats {
 
 const EMPTY_STATS: ReceiveStats = { validFrames: 0, duplicateFrames: 0, solvedBlocks: 0, blockCount: 0, startedAt: 0 };
 
+interface HarmonyBridge {
+  requestCameraPermission: () => void;
+  copyText: (message: string) => void;
+  saveFileStart: (message: string) => void;
+  saveFileChunk: (message: string) => void;
+  saveFileFinish: (message: string) => void;
+}
+
+interface HarmonyResultDetail {
+  ok: boolean;
+  message: string;
+}
+
+function getHarmonyBridge(): HarmonyBridge | null {
+  return (window as Window & { DataYaoHarmony?: HarmonyBridge }).DataYaoHarmony ?? null;
+}
+
+function requestHarmonyCameraPermission(): Promise<void> {
+  const bridge = getHarmonyBridge();
+  if (!bridge) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener("datayao-harmony-camera-permission", onResult);
+      window.clearTimeout(timeout);
+      error ? reject(error) : resolve();
+    };
+    const onResult = (event: Event) => {
+      const detail = (event as CustomEvent<CameraPermissionDetail>).detail;
+      if (detail?.granted) finish();
+      else finish(new Error(detail?.message || "摄像头权限未授予"));
+    };
+    const timeout = window.setTimeout(() => finish(new Error("鸿蒙摄像头授权响应超时")), 15_000);
+    window.addEventListener("datayao-harmony-camera-permission", onResult);
+    bridge.requestCameraPermission();
+  });
+}
+
+interface CameraPermissionDetail {
+  granted: boolean;
+  message?: string;
+}
+
 export function ReceiverView() {
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("摄像头未启动");
@@ -122,6 +168,7 @@ export function ReceiverView() {
     streamKeyRef.current = "";
     setStats(EMPTY_STATS);
     try {
+      await requestHarmonyCameraPermission();
       if (!navigator.mediaDevices?.getUserMedia) throw new Error("当前页面不是安全上下文，摄像头需要 HTTPS");
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
@@ -259,11 +306,52 @@ export function ReceiverView() {
 function ResultPanel({ result }: { result: TransferResult }) {
   const text = result.isText ? new TextDecoder().decode(result.bytes) : "";
   const url = useMemo(() => URL.createObjectURL(new Blob([result.bytes as BlobPart], { type: result.mimeType })), [result.bytes, result.mimeType]);
+  const [feedback, setFeedback] = useState("");
 
   useEffect(() => () => URL.revokeObjectURL(url), [url]);
 
+  useEffect(() => {
+    const onSaveResult = (event: Event) => {
+      const detail = (event as CustomEvent<HarmonyResultDetail>).detail;
+      if (detail?.message) setFeedback(detail.message);
+    };
+    const onCopyResult = (event: Event) => {
+      const detail = (event as CustomEvent<HarmonyResultDetail>).detail;
+      if (detail?.message) setFeedback(detail.message);
+    };
+    window.addEventListener("datayao-harmony-save-result", onSaveResult);
+    window.addEventListener("datayao-harmony-copy-result", onCopyResult);
+    return () => {
+      window.removeEventListener("datayao-harmony-save-result", onSaveResult);
+      window.removeEventListener("datayao-harmony-copy-result", onCopyResult);
+    };
+  }, []);
+
   async function copyText() {
+    const bridge = getHarmonyBridge();
+    if (bridge) {
+      setFeedback("正在复制…");
+      bridge.copyText(JSON.stringify({ text }));
+      return;
+    }
     await navigator.clipboard.writeText(text);
+    setFeedback("已复制到剪贴板");
+  }
+
+  async function saveFile() {
+    const bridge = getHarmonyBridge();
+    if (!bridge) return;
+    setFeedback("正在准备保存…");
+    bridge.saveFileStart(JSON.stringify({ name: result.fileName, mimeType: result.mimeType, size: result.bytes.length }));
+    const chunkSize = 192 * 1024;
+    for (let offset = 0; offset < result.bytes.length; offset += chunkSize) {
+      const chunk = result.bytes.subarray(offset, Math.min(offset + chunkSize, result.bytes.length));
+      bridge.saveFileChunk(JSON.stringify({ base64: encodeBase64(chunk) }));
+      if (offset > 0 && offset % (chunkSize * 8) === 0) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      }
+    }
+    bridge.saveFileFinish("{}");
   }
 
   return (
@@ -275,12 +363,24 @@ function ResultPanel({ result }: { result: TransferResult }) {
       <div className="result-actions">
         {result.isText ? (
           <button className="primary-button" type="button" onClick={copyText}><Copy size={17} /> 复制文本</button>
+        ) : getHarmonyBridge() ? (
+          <button className="primary-button" type="button" onClick={() => void saveFile()}><Download size={17} /> 保存文件</button>
         ) : (
           <a className="primary-button" href={url} download={result.fileName}><Download size={17} /> 保存文件</a>
         )}
       </div>
+      {feedback && <p className="save-feedback" role="status">{feedback}</p>}
     </div>
   );
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const step = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += step) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + step, bytes.length)));
+  }
+  return btoa(binary);
 }
 
 function formatBytes(bytes: number): string {

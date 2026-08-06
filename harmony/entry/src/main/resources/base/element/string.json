@@ -1,0 +1,24 @@
+{
+  "string": [
+    {
+      "name": "app_name",
+      "value": "DataYao"
+    },
+    {
+      "name": "module_desc",
+      "value": "DataYao offline dynamic QR receiver"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "DataYao receiver"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "DataYao"
+    },
+    {
+      "name": "camera_permission_reason",
+      "value": "Used to scan DataYao dynamic QR frames on this device."
+    }
+  ]
+}

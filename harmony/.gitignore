@@ -1,0 +1,9 @@
+node_modules/
+oh_modules/
+.hvigor/
+build/
+entry/build/
+entry/.preview/
+*.hap
+*.app
+*.har

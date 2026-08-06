@@ -1,0 +1,20 @@
+{
+  "name": "datayao-harmony-build",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Local Hvigor build wrapper for the DataYao HarmonyOS receiver.",
+  "ohos": {
+    "org": "huawei",
+    "buildTool": "hvigor",
+    "directoryLevel": "project"
+  },
+  "scripts": {
+    "assemble:hap": "node ./node_modules/@ohos/hvigor/bin/hvigor.js --mode module -p module=entry@default -p product=default assembleHap",
+    "assemble:app": "node ./node_modules/@ohos/hvigor/bin/hvigor.js --mode project -p product=default assembleApp"
+  },
+  "devDependencies": {
+    "@ohos/hvigor": "6.24.2",
+    "@ohos/hvigor-ohos-plugin": "6.24.2",
+    "postcss": "8.5.10"
+  }
+}

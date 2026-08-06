@@ -92,6 +92,7 @@ npm run build
 npm run preview
 npm run package:portable
 npm run build:android
+npm run build:harmony
 ```
 
 ## 目录结构
@@ -101,6 +102,8 @@ src/components/  发送端和接收端 UI
 src/core/        QR、协议、CRC/SHA-256、LT fountain code
 desktop/         Electron 主进程和 Windows 便携包脚本
 android/         Capacitor Android 接收端工程
+harmony/         HarmonyOS Stage 接收端工程
+scripts/          跨平台构建和鸿蒙资源同步脚本
 public/          PWA 静态资源和品牌图标
 .github/workflows Pages、Windows Portable、Android APK 工作流
 ```
@@ -111,6 +114,18 @@ public/          PWA 静态资源和品牌图标
 - 传输速度受二维码尺寸、屏幕刷新率、相机帧率和环境光影响。
 - 页面不提供加密或身份认证，请勿传输需要保密的内容。
 - 应用不上传文件、不调用后端 API；浏览器摄像头画面只在本地处理。
+
+## HarmonyOS 接收端
+
+仓库包含独立的 `harmony/` 鸿蒙 Stage 工程，复用同一套接收、QR 解码、LT Fountain 和校验核心，默认仅显示接收模式并只申请摄像头权限。鸿蒙原生层处理 ArkWeb 摄像头授权、系统剪贴板和文档选择器保存文件。
+
+建议在 DevEco Studio 中直接打开 `harmony/` 目录。命令行构建：
+
+```powershell
+npm.cmd run build:harmony
+```
+
+构建会先生成 `VITE_RECEIVER_ONLY=1` 的离线 Web 资源，再同步到 `harmony/entry/src/main/resources/rawfile/datayao/`，最后调用本机 Hvigor。未配置 DataYao 专属 AGC Profile 时，产物会明确标记为 `*-HarmonyOS-unsigned.app`，仅用于本地安装和验证；上架必须使用与 `io.github.jensenyao.datayao` 匹配的独立签名材料，不能复用其他应用的 `.p12`、`.p7b` 或密码。
 
 ## 许可
 
