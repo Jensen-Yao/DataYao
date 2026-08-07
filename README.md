@@ -31,7 +31,7 @@ DataYao 是一个双端离线的动态二维码传输工具：发送端把文件
 | :--- | :--- | :--- |
 | Windows 便携版 | [Portable ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.4/DataYao-0.2.4-Windows-x64-Portable.zip) | 解压即用，包含发送与接收双端 |
 | Android 接收端 | [Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.4/DataYao-Receiver-release.apk) | GitHub Actions 签名，仅接收模式 |
-| HarmonyOS 接收端 | [HarmonyOS 包](https://github.com/Jensen-Yao/DataYao/releases/tag/v0.2.4) | 未签名开发验证包，需自行签名后上架 |
+| HarmonyOS 接收端 | [HarmonyOS ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.4/DataYao-0.2.4-HarmonyOS-unsigned.zip) | 未签名开发验证包，需自行签名后上架 |
 | Web / PWA | [GitHub Pages](https://jensen-yao.github.io/DataYao/) | 浏览器直接打开，可安装为 PWA |
 
 > 完整发布列表见 [Releases](https://github.com/Jensen-Yao/DataYao/releases)。
