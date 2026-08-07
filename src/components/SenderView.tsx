@@ -18,8 +18,8 @@ export function SenderView() {
   const [sourceMode, setSourceMode] = useState<"file" | "text">("file");
   const [file, setFile] = useState<File | null>(null);
   const [text, setText] = useState("");
-  const [blockSize, setBlockSize] = useState(1600);
-  const [fps, setFps] = useState(24);
+  const [blockSize, setBlockSize] = useState(1200);
+  const [fps, setFps] = useState(15);
   const [ecc, setEcc] = useState<QrEcc>("L");
   const [transfer, setTransfer] = useState<LiveTransfer | null>(null);
   const [running, setRunning] = useState(false);

@@ -46,7 +46,7 @@ export function App() {
       <main>{mode === "send" ? <SenderView /> : <ReceiverView />}</main>
 
       <footer>
-        <span>DataYao v0.2.2</span>
+        <span>DataYao v0.2.3</span>
         <span>标准 QR · LT Fountain · SHA-256</span>
       </footer>
     </div>

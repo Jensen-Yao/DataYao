@@ -1,6 +1,6 @@
 {
   "name": "datayao",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Fast, stable offline file transfer over animated QR codes.",
   "private": true,
   "scripts": {
@@ -14,6 +14,7 @@
     "test:harmony:web": "node scripts/smoke-harmony-web.cjs",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:optical": "npm run build && node scripts/optical-loopback.cjs",
     "test:watch": "vitest",
     "typecheck": "tsc -b --pretty false"
   },
@@ -31,11 +32,11 @@
     "@capacitor/android": "^8.5.0",
     "@capacitor/core": "^8.5.0",
     "fflate": "^0.8.3",
-    "jsqr": "^1.4.0",
     "lucide-react": "^1.29.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "zxing-wasm": "^2.2.4"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.0",
@@ -48,6 +49,8 @@
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
     "jsdom": "^29.1.1",
+    "jsqr": "^1.4.0",
+    "pngjs": "^7.0.0",
     "typescript": "^7.0.2",
     "vite": "^8.2.1",
     "vite-plugin-pwa": "^1.3.0",

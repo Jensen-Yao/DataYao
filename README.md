@@ -4,12 +4,13 @@ DataYao 是一个双端离线的动态二维码传输工具：发送端把文件
 
 **在线体验：** [jensen-yao.github.io/DataYao](https://jensen-yao.github.io/DataYao/)
 
-**最新发布：** [Windows Portable ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.2/DataYao-0.2.2-Windows-x64-Portable.zip) · [Android Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.2/DataYao-Receiver-release.apk) · [HarmonyOS Receiver](https://github.com/Jensen-Yao/DataYao/releases/tag/v0.2.2)
+**最新发布：** [Windows Portable ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.3/DataYao-0.2.3-Windows-x64-Portable.zip) · [Android Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.3/DataYao-Receiver-release.apk) · [HarmonyOS Receiver](https://github.com/Jensen-Yao/DataYao/releases/tag/v0.2.3)
 
 ## 特性
 
 - **双端离线**：页面首次加载后由 Service Worker 缓存；光学传输阶段没有网络请求。
 - **抗丢帧**：LT fountain code 允许帧乱序、丢失和重复，接收端收到足够独立方程即可恢复。
+- **实时解码**：两个独立 Web Worker 使用 ZXing-C++ WASM 分析原始摄像头帧；解码繁忙时丢弃旧帧，不阻塞界面或积压延迟。
 - **完整性校验**：每个 QR 帧带 CRC32，完整容器恢复后再做 SHA-256 校验。
 - **文件与文本**：保留文件名和 MIME 类型；可选 gzip 压缩，文本支持直接复制。
 - **可调参数**：每帧字节数、播放帧率和 QR 纠错等级可按屏幕、距离和相机能力调节。
@@ -41,7 +42,7 @@ npm run package:portable
 
 Android 工程使用 Capacitor，构建时设置 `VITE_RECEIVER_ONLY=1`，启动后直接进入接收页并隐藏发送入口，只申请摄像头权限。仓库的 `.github/workflows/android.yml` 会在 GitHub Actions 中安装 Android SDK、构建 release APK、使用 GitHub Actions Secrets 中的 JKS 发布密钥签名，并生成 GitHub artifact provenance。
 
-APK 最低支持 Android 7.0（API 24）。扫描阶段需要摄像头权限、后置自动对焦摄像头和足够的二维码屏幕像素；保存文件时会调用 Android 系统文件选择器，用户选择目标目录即可，不需要存储权限。
+APK 最低支持 Android 7.0（API 24）。扫描阶段需要摄像头权限，建议使用支持连续自动对焦、至少能输出 720p 画面的后置摄像头；保存文件时会调用 Android 系统文件选择器，用户选择目标目录即可，不需要存储权限。接收过程在内存中恢复文件，接近 64 MB 上限时需要为应用保留足够可用内存。
 
 需要配置的仓库 Secrets：
 
@@ -66,12 +67,20 @@ APK 的签名用于确认发布者和升级来源，不会对光学传输内容�
 
 ## 稳定性调优
 
-默认参数为 **1600 bytes/frame、24 fps、ECC-L**，通常能在速度和识别稳定性之间取得平衡。
+默认参数为 **1200 bytes/frame、15 fps、ECC-L**，优先保证手机摄像头的实拍识别率。
 
 - 识别困难、距离较远或屏幕较小：降低每帧字节数到 800/1200，帧率降到 10/15，纠错改为 M。
 - 光线充足、设备性能较好：可尝试 2000/2300 bytes 和 24/30 fps。
 - 保持二维码四周留白，避免浏览器缩放、系统护眼滤镜和屏幕反光。
-- 接收页会显示有效帧、重复帧、已恢复块和解码 FPS，便于判断参数是否合适。
+- 接收页会请求连续自动对焦，并显示采集、分析、二维码、有效帧和忙时丢帧计数，便于判断参数是否合适。
+
+普通浏览器扫码能识别静态网址，不代表一定能识别 DataYao 默认数据帧：数据帧包含约 1 KB 二进制载荷，二维码密度显著高于常见网址码，并且画面持续变化。可按下面的计数定位问题：
+
+- **采集一直为 0**：摄像头没有提供视频帧，检查权限、摄像头占用或 ArkWeb/WebView 兼容性。
+- **采集增长、分析一直为 0**：ZXing Worker/WASM 没有返回；重启应用并确认安装包完整，界面会在 8 秒后报告具体解码器错误。
+- **分析增长、二维码一直为 0**：解码器正常，但构图、对焦、反光或二维码密度不合适；让二维码占画面宽度 40%–80%，先降到 800/1200 B 和 10/15 fps。
+- **二维码增长、有效帧为 0**：相机看到了二维码，但不是 DataYao 帧或协议版本不匹配。
+- **有效帧增长但进度较慢**：链路已经正常，继续播放或降低帧率，减少运动模糊和重复帧。
 
 ## 协议概要
 
@@ -92,6 +101,7 @@ npm run dev
 npm run typecheck
 npm test
 npm run build
+npm run test:optical
 npm run preview
 npm run package:portable
 npm run build:android
@@ -129,6 +139,10 @@ npm.cmd run build:harmony
 ```
 
 构建会先生成 `VITE_RECEIVER_ONLY=1` 的离线 Web 资源，再同步到 `harmony/entry/src/main/resources/rawfile/datayao/`，最后调用本机 Hvigor。未配置 DataYao 专属 AGC Profile 时，产物会明确标记为 `*-HarmonyOS-unsigned.app`，仅用于本地安装和验证；上架必须使用与 `io.github.jensenyao.datayao` 匹配的独立签名材料，不能复用其他应用的 `.p12`、`.p7b` 或密码。
+
+## 实现参考
+
+实时采集与解码架构参考了 [decimen-optical-transfer](https://github.com/bashalarmistalt/decimen-optical-transfer) 的原始分辨率帧、`requestVideoFrameCallback`、多 Worker 和忙时丢帧设计；同时对照了 [qrcode-file-transfer](https://github.com/ganlvtech/qrcode-file-transfer) 与 [qr-scanner](https://github.com/nimiq/qr-scanner) 的相机采集实现。DataYao 的传输协议、LT fountain code、容器与界面为本项目实现。
 
 ## 许可
 

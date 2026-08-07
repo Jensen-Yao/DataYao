@@ -11,6 +11,7 @@ const mimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".wasm": "application/wasm",
 };
 
 function createServer() {
@@ -90,7 +91,7 @@ async function main() {
     if (!camera || Math.abs(camera.width - camera.height) > 2) {
       throw new Error(`The camera shell is not square: ${JSON.stringify(camera)}`);
     }
-    await page.waitForTimeout(4_000);
+    await page.waitForTimeout(9_000);
     const diagnostic = await page.locator('[role="alert"]').innerText();
     if (!diagnostic.includes("未识别到二维码")) {
       throw new Error(`The receiver did not report a specific no-QR diagnostic: ${diagnostic}`);

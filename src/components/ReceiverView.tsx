@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import jsQR from "jsqr";
 import { Camera, CheckCircle2, Copy, Download, RefreshCw, ScanLine, Square } from "lucide-react";
 import { crc32 } from "../core/checksum";
 import { LTDecoder } from "../core/fountain";
 import { parseFrame, streamKey, unpackTransfer, type TransferResult } from "../core/protocol";
+import { QrDecodePool } from "../core/qrDecodePool";
 
 interface ReceiveStats {
   validFrames: number;
@@ -14,7 +14,16 @@ interface ReceiveStats {
 }
 
 const EMPTY_STATS: ReceiveStats = { validFrames: 0, duplicateFrames: 0, solvedBlocks: 0, blockCount: 0, startedAt: 0 };
-type ScanPhase = "idle" | "searching" | "no-camera-frame" | "no-qr" | "invalid-qr" | "locked" | "complete";
+type ScanPhase = "idle" | "searching" | "no-camera-frame" | "no-qr" | "invalid-qr" | "decoder-error" | "locked" | "complete";
+
+interface ScanActivity {
+  capturedFrames: number;
+  analyzedFrames: number;
+  droppedFrames: number;
+  workerCount: number;
+}
+
+const EMPTY_ACTIVITY: ScanActivity = { capturedFrames: 0, analyzedFrames: 0, droppedFrames: 0, workerCount: 0 };
 
 interface NativeSaveBridge {
   saveFileStart: (message: string) => void;
@@ -75,6 +84,13 @@ interface CameraPermissionDetail {
   message?: string;
 }
 
+type VideoFrameElement = HTMLVideoElement & {
+  requestVideoFrameCallback?: (callback: (now: number) => void) => number;
+};
+
+type FocusCapabilities = MediaTrackCapabilities & { focusMode?: string[] };
+type FocusConstraintSet = MediaTrackConstraintSet & { focusMode?: string };
+
 export function ReceiverView() {
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("摄像头未启动");
@@ -83,6 +99,7 @@ export function ReceiverView() {
   const [result, setResult] = useState<TransferResult | null>(null);
   const [scanPhase, setScanPhase] = useState<ScanPhase>("idle");
   const [qrDetections, setQrDetections] = useState(0);
+  const [scanActivity, setScanActivity] = useState<ScanActivity>(EMPTY_ACTIVITY);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -97,78 +114,133 @@ export function ReceiverView() {
   const lastQrAtRef = useRef(0);
   const lastDiagnosticAtRef = useRef(0);
   const invalidQrFramesRef = useRef(0);
+  const qrDetectionsRef = useRef(0);
+  const capturedFramesRef = useRef(0);
+  const droppedFramesRef = useRef(0);
+  const decoderErrorRef = useRef("");
 
   useEffect(() => {
     if (!running) return;
-    let frameHandle = 0;
     let cancelled = false;
-    let lastStatsAt = 0;
+    let animationFrameHandle = 0;
+    let videoFrameHandle = 0;
+    const scanContext = scanCanvasRef.current?.getContext("2d", { willReadFrequently: true }) ?? null;
+    const pool = new QrDecodePool(
+      2,
+      (bytes) => {
+        if (cancelled || completedRef.current) return;
+        const now = performance.now();
+        lastQrAtRef.current = now;
+        qrDetectionsRef.current += 1;
+        void acceptFrame(bytes).then((accepted) => {
+          if (accepted || decoderRef.current) return;
+          invalidQrFramesRef.current += 1;
+          setScanPhase("invalid-qr");
+          setStatus("二维码不是 DataYao 帧");
+          if (invalidQrFramesRef.current === 1 || now - lastDiagnosticAtRef.current > 3000) {
+            setError("解码器已识别到二维码，但内容不是 DataYao 数据帧。请确认发送端正在播放 DataYao。");
+            lastDiagnosticAtRef.current = now;
+          }
+        }).catch((cause) => {
+          setScanPhase("invalid-qr");
+          setError(cause instanceof Error ? cause.message : String(cause));
+        });
+      },
+      (message) => {
+        if (cancelled) return;
+        decoderErrorRef.current = message;
+        setScanPhase("decoder-error");
+        setStatus("二维码解码器异常");
+        setError(`ZXing 解码器运行失败：${message}`);
+      },
+    );
 
-    const scan = async (now: number) => {
+    const captureFrame = () => {
       if (cancelled || completedRef.current) return;
       const video = videoRef.current;
       const canvas = scanCanvasRef.current;
       if (video && canvas && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
-        const scale = Math.min(1, 960 / Math.max(video.videoWidth, video.videoHeight));
-        const scanWidth = Math.max(1, Math.round(video.videoWidth * scale));
-        const scanHeight = Math.max(1, Math.round(video.videoHeight * scale));
-        canvas.width = scanWidth;
-        canvas.height = scanHeight;
-        const context = canvas.getContext("2d", { willReadFrequently: true });
-        if (context) {
-          context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, scanWidth, scanHeight);
-          const image = context.getImageData(0, 0, scanWidth, scanHeight);
-          const decoded = jsQR(image.data, scanWidth, scanHeight, { inversionAttempts: "attemptBoth" });
-          if (decoded?.binaryData?.length) {
-            lastQrAtRef.current = now;
-            setQrDetections((count) => count + 1);
-            try {
-              const accepted = await acceptFrame(Uint8Array.from(decoded.binaryData));
-              if (!accepted && !decoderRef.current) {
-                invalidQrFramesRef.current += 1;
-                setScanPhase("invalid-qr");
-                setStatus("二维码不是 DataYao 帧");
-                if (invalidQrFramesRef.current === 1 || now - lastDiagnosticAtRef.current > 3000) {
-                  setError("已识别到二维码，但不是 DataYao 数据帧。请确认发送端正在播放 DataYao。");
-                  lastDiagnosticAtRef.current = now;
-                }
-              }
-            } catch (cause) {
-              setScanPhase("invalid-qr");
-              setError(cause instanceof Error ? cause.message : String(cause));
-            }
-          }
+        capturedFramesRef.current += 1;
+        if (pool.busyCount >= pool.size) {
+          droppedFramesRef.current += 1;
+          return;
+        }
+        const scanWidth = video.videoWidth;
+        const scanHeight = video.videoHeight;
+        if (canvas.width !== scanWidth || canvas.height !== scanHeight) {
+          canvas.width = scanWidth;
+          canvas.height = scanHeight;
+        }
+        if (scanContext) {
+          scanContext.drawImage(video, 0, 0, scanWidth, scanHeight);
+          const image = scanContext.getImageData(0, 0, scanWidth, scanHeight);
+          if (!pool.submit(image)) droppedFramesRef.current += 1;
         }
       }
-      if (scanStartedAtRef.current && now - scanStartedAtRef.current > 3500 && now - lastDiagnosticAtRef.current > 2500) {
+    };
+
+    const video = videoRef.current as VideoFrameElement | null;
+    const scheduleVideoFrame = () => {
+      if (cancelled || completedRef.current) return;
+      if (video?.requestVideoFrameCallback) {
+        videoFrameHandle = video.requestVideoFrameCallback(() => {
+          captureFrame();
+          scheduleVideoFrame();
+        });
+      } else {
+        animationFrameHandle = requestAnimationFrame(() => {
+          captureFrame();
+          scheduleVideoFrame();
+        });
+      }
+    };
+
+    const diagnosticsTimer = window.setInterval(() => {
+      if (cancelled) return;
+      const now = performance.now();
+      const video = videoRef.current;
+      setQrDetections(qrDetectionsRef.current);
+      setScanActivity({
+        capturedFrames: capturedFramesRef.current,
+        analyzedFrames: pool.completedCount,
+        droppedFrames: droppedFramesRef.current,
+        workerCount: pool.size,
+      });
+      if (scanStartedAtRef.current && now - scanStartedAtRef.current > 8000 && now - lastDiagnosticAtRef.current > 3000) {
         const hasVideoFrame = Boolean(video && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0);
-        if (!hasVideoFrame) {
+        if (!hasVideoFrame || capturedFramesRef.current === 0) {
           setScanPhase("no-camera-frame");
           setStatus("摄像头没有视频帧");
           setError("摄像头已打开，但没有收到视频帧。请检查系统权限、摄像头占用情况或更换摄像头。");
           lastDiagnosticAtRef.current = now;
+        } else if (decoderErrorRef.current) {
+          setScanPhase("decoder-error");
+          setStatus("二维码解码器异常");
+          setError(`摄像头画面正常，但 ZXing 解码器失败：${decoderErrorRef.current}`);
+          lastDiagnosticAtRef.current = now;
+        } else if (pool.completedCount === 0) {
+          setScanPhase("decoder-error");
+          setStatus("二维码解码器没有响应");
+          setError("摄像头画面正常，但 ZXing 解码器在 8 秒内没有返回结果。请重启接收端；若仍出现，请检查安装包是否完整包含 WASM 文件。");
+          lastDiagnosticAtRef.current = now;
         } else if (!lastQrAtRef.current) {
           setScanPhase("no-qr");
           setStatus("未识别到二维码");
-          setError("未识别到二维码。请将发送端二维码调到 100%，置于画面中央，并降低到 10–15 fps。");
+          setError("摄像头和解码器均在工作，但未识别到二维码。请让二维码完整占画面宽度的 40%–80%，避免反光，并将发送速度降到 10–15 fps、每帧 800–1200 B。");
           lastDiagnosticAtRef.current = now;
         }
       }
-      if (now - lastStatsAt > 250) {
-        const decoder = decoderRef.current;
-        if (decoder) {
-          setStats((current) => ({
-            ...current,
-            validFrames: decoder.framesNew,
-            duplicateFrames: decoder.framesDuplicate,
-            solvedBlocks: decoder.solvedCount,
-            blockCount: decoder.blockCount,
-          }));
-        }
-        lastStatsAt = now;
+      const decoder = decoderRef.current;
+      if (decoder) {
+        setStats((current) => ({
+          ...current,
+          validFrames: decoder.framesNew,
+          duplicateFrames: decoder.framesDuplicate,
+          solvedBlocks: decoder.solvedCount,
+          blockCount: decoder.blockCount,
+        }));
       }
-      frameHandle = requestAnimationFrame(scan);
-    };
+    }, 250);
 
     async function acceptFrame(bytes: Uint8Array): Promise<boolean> {
       const parsed = parseFrame(bytes);
@@ -202,10 +274,13 @@ export function ReceiverView() {
       return true;
     }
 
-    frameHandle = requestAnimationFrame(scan);
+    scheduleVideoFrame();
     return () => {
       cancelled = true;
-      cancelAnimationFrame(frameHandle);
+      window.clearInterval(diagnosticsTimer);
+      if (animationFrameHandle) cancelAnimationFrame(animationFrameHandle);
+      if (videoFrameHandle && video?.cancelVideoFrameCallback) video.cancelVideoFrameCallback(videoFrameHandle);
+      pool.terminate();
     };
   }, [running]);
 
@@ -218,9 +293,14 @@ export function ReceiverView() {
     setStats(EMPTY_STATS);
     setScanPhase("searching");
     setQrDetections(0);
+    setScanActivity(EMPTY_ACTIVITY);
     lastQrAtRef.current = 0;
     lastDiagnosticAtRef.current = 0;
     invalidQrFramesRef.current = 0;
+    qrDetectionsRef.current = 0;
+    capturedFramesRef.current = 0;
+    droppedFramesRef.current = 0;
+    decoderErrorRef.current = "";
     try {
       await requestHarmonyCameraPermission();
       if (!navigator.mediaDevices?.getUserMedia) throw new Error("当前页面不是安全上下文，摄像头需要 HTTPS");
@@ -230,11 +310,20 @@ export function ReceiverView() {
           deviceId: deviceId ? { exact: deviceId } : undefined,
           facingMode: deviceId ? undefined : { ideal: "environment" },
           width: { ideal: 1280 },
-          height: { ideal: 1280 },
+          height: { ideal: 960 },
           frameRate: { ideal: 30, max: 60 }
         }
       });
       streamRef.current = stream;
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack?.getCapabilities) {
+        const capabilities = videoTrack.getCapabilities() as FocusCapabilities;
+        if (capabilities.focusMode?.includes("continuous")) {
+          await videoTrack.applyConstraints({
+            advanced: [{ focusMode: "continuous" } as FocusConstraintSet],
+          }).catch(() => undefined);
+        }
+      }
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
@@ -264,6 +353,7 @@ export function ReceiverView() {
     void wakeLockRef.current?.release().catch(() => undefined);
     wakeLockRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    scanStartedAtRef.current = 0;
     setRunning(false);
   }
 
@@ -274,6 +364,7 @@ export function ReceiverView() {
     setStatus("摄像头未启动");
     setScanPhase("idle");
     setQrDetections(0);
+    setScanActivity(EMPTY_ACTIVITY);
     setStats(EMPTY_STATS);
     decoderRef.current = null;
     streamKeyRef.current = "";
@@ -326,7 +417,8 @@ export function ReceiverView() {
         {running && (
           <div className="scan-diagnostics" aria-live="polite">
             <span>{scanPhaseLabel(scanPhase)}</span>
-            <small>二维码 {qrDetections} · 有效帧 {stats.validFrames}</small>
+            <small>采集 {scanActivity.capturedFrames} · 分析 {scanActivity.analyzedFrames} · 二维码 {qrDetections}</small>
+            <small>{scanActivity.workerCount} 个解码线程 · 忙时丢帧 {scanActivity.droppedFrames}</small>
           </div>
         )}
 
@@ -375,6 +467,7 @@ function scanPhaseLabel(phase: ScanPhase): string {
     case "no-camera-frame": return "摄像头没有提供视频帧";
     case "no-qr": return "没有识别到二维码";
     case "invalid-qr": return "二维码格式不匹配";
+    case "decoder-error": return "ZXing 解码器运行失败";
     case "locked": return "已锁定 DataYao 数据流";
     case "complete": return "数据流恢复完成";
     default: return "等待扫描";

@@ -4,6 +4,14 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   base: "./",
   plugins: [react()],
+  worker: {
+    format: "iife",
+    rollupOptions: {
+      output: {
+        entryFileNames: "[name]-[hash].js",
+      },
+    },
+  },
   define: {
     "process.env.NODE_ENV": JSON.stringify("production"),
     "process.env": JSON.stringify({ NODE_ENV: "production" }),
