@@ -22,7 +22,7 @@ export function App() {
     <div className="app-shell">
       <header className="site-header">
         <a className="brand" href="./" aria-label="DataYao 首页">
-          <img src="./datayao-mark.svg" alt="" />
+          <img src="./logo.jpg" alt="" />
           <span>DataYao</span>
         </a>
         <nav className="mode-tabs" aria-label="传输模式">
@@ -46,7 +46,7 @@ export function App() {
       <main>{mode === "send" ? <SenderView /> : <ReceiverView />}</main>
 
       <footer>
-        <span>DataYao v0.2.3</span>
+        <span>DataYao v0.2.4</span>
         <span>标准 QR · LT Fountain · SHA-256</span>
       </footer>
     </div>

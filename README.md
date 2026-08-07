@@ -1,10 +1,40 @@
-# DataYao
+<p align="center">
+  <img src="public/logo.jpg" alt="DataYao Logo" width="160" />
+</p>
+
+<h1 align="center">DataYao</h1>
+
+<p align="center">
+  双端离线 · 稳定快速 · 动态二维码文件传输<br/>
+  无需 Wi-Fi、蓝牙、移动网络或服务器，仅凭屏幕与摄像头即可完成传输。
+</p>
+
+<p align="center">
+  <a href="https://jensen-yao.github.io/DataYao/">在线体验</a> ·
+  <a href="https://github.com/Jensen-Yao/DataYao/releases">下载发布版</a> ·
+  <a href="#特性">特性</a> ·
+  <a href="#使用方法">使用方法</a> ·
+  <a href="#下载">下载</a>
+</p>
+
+---
+
+## 概述
 
 DataYao 是一个双端离线的动态二维码传输工具：发送端把文件或文本编码为连续 QR 帧，接收端只使用摄像头扫描并在本地恢复。传输链路不需要 Wi-Fi、蓝牙、移动网络或服务器，也不包含加密层，适合临时、低依赖的近距离数据搬运。
 
 **在线体验：** [jensen-yao.github.io/DataYao](https://jensen-yao.github.io/DataYao/)
 
-**最新发布：** [Windows Portable ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.3/DataYao-0.2.3-Windows-x64-Portable.zip) · [Android Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.3/DataYao-Receiver-release.apk) · [HarmonyOS Receiver](https://github.com/Jensen-Yao/DataYao/releases/tag/v0.2.3)
+## 下载
+
+| 平台 | 下载 | 说明 |
+| :--- | :--- | :--- |
+| Windows 便携版 | [Portable ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.4/DataYao-0.2.4-Windows-x64-Portable.zip) | 解压即用，包含发送与接收双端 |
+| Android 接收端 | [Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.4/DataYao-Receiver-release.apk) | GitHub Actions 签名，仅接收模式 |
+| HarmonyOS 接收端 | [HarmonyOS 包](https://github.com/Jensen-Yao/DataYao/releases/tag/v0.2.4) | 未签名开发验证包，需自行签名后上架 |
+| Web / PWA | [GitHub Pages](https://jensen-yao.github.io/DataYao/) | 浏览器直接打开，可安装为 PWA |
+
+> 完整发布列表见 [Releases](https://github.com/Jensen-Yao/DataYao/releases)。
 
 ## 特性
 
@@ -15,6 +45,7 @@ DataYao 是一个双端离线的动态二维码传输工具：发送端把文件
 - **文件与文本**：保留文件名和 MIME 类型；可选 gzip 压缩，文本支持直接复制。
 - **可调参数**：每帧字节数、播放帧率和 QR 纠错等级可按屏幕、距离和相机能力调节。
 - **便携操作**：发送端支持把文件直接拖入文件区；二维码显示尺寸可用滑块缩小，方便调整拍摄距离。
+- **诊断面板**：实时显示采集、分析、二维码识别和有效帧计数，连续无识别时给出具体原因。
 - **纯前端**：React + TypeScript + Vite，无后端、无账号、无遥测。
 
 ## 使用方法
@@ -24,7 +55,7 @@ DataYao 是一个双端离线的动态二维码传输工具：发送端把文件
 3. 接收端允许摄像头权限，优先使用后置摄像头，对准发送端二维码区域。
 4. 看到“接收完成”后，文本可复制，文件可保存。
 
-## 便携版与 Android 接收端
+## 便携版与移动端
 
 ### Windows 双端便携版
 
@@ -60,6 +91,18 @@ gh attestation verify DataYao-Receiver-release.apk -R Jensen-Yao/DataYao
 ```
 
 APK 的签名用于确认发布者和升级来源，不会对光学传输内容加密；传输协议仍按设计保持明文并使用 SHA-256 做完整性校验。
+
+### HarmonyOS 接收端
+
+仓库包含独立的 `harmony/` 鸿蒙 Stage 工程，复用同一套接收、QR 解码、LT Fountain 和校验核心，默认仅显示接收模式并只申请摄像头权限。鸿蒙原生层处理 ArkWeb 摄像头授权、系统剪贴板和文档选择器保存文件。
+
+建议在 DevEco Studio 中直接打开 `harmony/` 目录。命令行构建：
+
+```powershell
+npm.cmd run build:harmony
+```
+
+构建会先生成 `VITE_RECEIVER_ONLY=1` 的离线 Web 资源，再同步到 `harmony/entry/src/main/resources/rawfile/datayao/`，最后调用本机 Hvigor。未配置 DataYao 专属 AGC Profile 时，产物会明确标记为 `*-HarmonyOS-unsigned.app`，仅用于本地安装和验证；上架必须使用与 `io.github.jensenyao.datayao` 匹配的独立签名材料，不能复用其他应用的 `.p12`、`.p7b` 或密码。
 
 ### 摄像头与 HTTPS
 
@@ -113,11 +156,12 @@ npm run build:harmony
 ```text
 src/components/  发送端和接收端 UI
 src/core/        QR、协议、CRC/SHA-256、LT fountain code
+src/workers/     ZXing WASM 解码 Worker
 desktop/         Electron 主进程和 Windows 便携包脚本
 android/         Capacitor Android 接收端工程
 harmony/         HarmonyOS Stage 接收端工程
-scripts/          跨平台构建和鸿蒙资源同步脚本
-public/          PWA 静态资源和品牌图标
+scripts/         跨平台构建和鸿蒙资源同步脚本
+public/          PWA 静态资源和品牌 Logo（logo.jpg）
 .github/workflows Pages、Windows Portable、Android APK 工作流
 ```
 
@@ -128,17 +172,12 @@ public/          PWA 静态资源和品牌图标
 - 页面不提供加密或身份认证，请勿传输需要保密的内容。
 - 应用不上传文件、不调用后端 API；浏览器摄像头画面只在本地处理。
 
-## HarmonyOS 接收端
+## 更新日志
 
-仓库包含独立的 `harmony/` 鸿蒙 Stage 工程，复用同一套接收、QR 解码、LT Fountain 和校验核心，默认仅显示接收模式并只申请摄像头权限。鸿蒙原生层处理 ArkWeb 摄像头授权、系统剪贴板和文档选择器保存文件。
-
-建议在 DevEco Studio 中直接打开 `harmony/` 目录。命令行构建：
-
-```powershell
-npm.cmd run build:harmony
-```
-
-构建会先生成 `VITE_RECEIVER_ONLY=1` 的离线 Web 资源，再同步到 `harmony/entry/src/main/resources/rawfile/datayao/`，最后调用本机 Hvigor。未配置 DataYao 专属 AGC Profile 时，产物会明确标记为 `*-HarmonyOS-unsigned.app`，仅用于本地安装和验证；上架必须使用与 `io.github.jensenyao.datayao` 匹配的独立签名材料，不能复用其他应用的 `.p12`、`.p7b` 或密码。
+- **v0.2.4**：更换产品 Logo；更新 PWA 图标与 favicon；同步 Windows、Android、HarmonyOS 版本号。
+- **v0.2.3**：接收端改用 ZXing-C++ WASM 双 Worker 解码；默认参数调整为 1200 B / 15 fps；新增光学回环测试。
+- **v0.2.2**：扫描失败显示具体原因；Android 文件保存改用系统文件选择器。
+- **v0.2.1**：接收端启动后扫描画面自动置顶；发送端新增二维码缩放与文件拖放。
 
 ## 实现参考
 
@@ -147,4 +186,3 @@ npm.cmd run build:harmony
 ## 许可
 
 [MIT License](LICENSE)
-

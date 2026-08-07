@@ -240,7 +240,7 @@ export function SenderView() {
           <canvas ref={canvasRef} aria-label="DataYao 动态二维码" style={{ width: `${qrScale}%` }} />
           {!running && (
             <div className="stage-empty">
-              <img src="./datayao-mark.svg" alt="DataYao" />
+              <img src="./logo.jpg" alt="DataYao" />
               <strong>DataYao</strong>
               <span>光学传输待机</span>
             </div>

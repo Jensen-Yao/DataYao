@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["datayao-mark.svg"],
+      includeAssets: ["logo.jpg", "datayao-mark.svg"],
       manifest: {
         name: "DataYao Offline Transfer",
         short_name: "DataYao",
@@ -17,13 +17,13 @@ export default defineConfig({
         background_color: "#0b1118",
         display: "standalone",
         icons: [
-          { src: "datayao-mark.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" }
+          { src: "logo.jpg", sizes: "any", type: "image/jpeg", purpose: "any maskable" }
         ]
       },
       workbox: {
         cleanupOutdatedCaches: true,
         navigateFallback: "index.html",
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm}"],
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,jpg,jpeg,wasm}"],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       }
     })
