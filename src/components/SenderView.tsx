@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { File as FileIcon, FileText, Maximize2, Play, Square, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { File as FileIcon, FileText, Maximize2, Play, Square, Upload, ZoomIn, ZoomOut } from "lucide-react";
 import { LTEncoder } from "../core/fountain";
 import { makeFrameHeader, packFrame, packTransfer, type TransferPayload } from "../core/protocol";
 import { renderQr, type QrEcc } from "../core/qr";
 
 const BLOCK_OPTIONS = [800, 1200, 1600, 2000, 2300] as const;
 const FPS_OPTIONS = [10, 15, 20, 24, 30] as const;
+const MAX_FILE_SIZE = 64 * 1024 * 1024;
 
 interface LiveTransfer {
   payload: TransferPayload;
@@ -24,9 +25,12 @@ export function SenderView() {
   const [running, setRunning] = useState(false);
   const [frameNumber, setFrameNumber] = useState(0);
   const [qrVersion, setQrVersion] = useState<number | null>(null);
+  const [qrScale, setQrScale] = useState(100);
+  const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState("");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const dragDepthRef = useRef(0);
 
   const estimatedRate = useMemo(() => Math.round((blockSize * fps) / 1.2 / 1024), [blockSize, fps]);
 
@@ -100,6 +104,43 @@ export function SenderView() {
     setRunning(false);
   }
 
+  function chooseFile(candidate: File | undefined) {
+    if (!candidate) return;
+    if (candidate.size > MAX_FILE_SIZE) {
+      setError("文件不能超过 64 MB");
+      return;
+    }
+    setError("");
+    setFile(candidate);
+  }
+
+  function handleDragEnter(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    if (running) return;
+    dragDepthRef.current += 1;
+    setDragActive(true);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    if (!running) event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    if (running) return;
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setDragActive(false);
+  }
+
+  function handleDrop(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setDragActive(false);
+    if (running) return;
+    chooseFile(event.dataTransfer.files?.[0]);
+  }
+
   async function enterFullscreen() {
     await stageRef.current?.requestFullscreen?.();
   }
@@ -124,11 +165,18 @@ export function SenderView() {
         </div>
 
         {sourceMode === "file" ? (
-          <label className="file-drop">
+          <label
+            className={`file-drop${dragActive ? " is-dragging" : ""}${running ? " is-disabled" : ""}`}
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            aria-disabled={running}
+          >
             <Upload size={24} />
-            <span>{file ? file.name : "选择文件"}</span>
+            <span>{file ? file.name : "选择或拖入文件"}</span>
             <small>{file ? formatBytes(file.size) : "最大 64 MB"}</small>
-            <input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+            <input type="file" disabled={running} onChange={(event) => chooseFile(event.target.files?.[0])} />
           </label>
         ) : (
           <label className="text-source">
@@ -189,7 +237,7 @@ export function SenderView() {
           </button>
         </div>
         <div className="qr-shell">
-          <canvas ref={canvasRef} aria-label="DataYao 动态二维码" />
+          <canvas ref={canvasRef} aria-label="DataYao 动态二维码" style={{ width: `${qrScale}%` }} />
           {!running && (
             <div className="stage-empty">
               <img src="./datayao-mark.svg" alt="DataYao" />
@@ -197,6 +245,22 @@ export function SenderView() {
               <span>光学传输待机</span>
             </div>
           )}
+        </div>
+        <div className="qr-size-control">
+          <ZoomOut size={16} aria-hidden="true" />
+          <label htmlFor="qr-scale">二维码大小</label>
+          <input
+            id="qr-scale"
+            type="range"
+            min="40"
+            max="100"
+            step="5"
+            value={qrScale}
+            onChange={(event) => setQrScale(Number(event.target.value))}
+            aria-valuetext={`${qrScale}%`}
+          />
+          <output htmlFor="qr-scale">{qrScale}%</output>
+          <ZoomIn size={16} aria-hidden="true" />
         </div>
         <dl className="stage-metrics">
           <div><dt>序列</dt><dd>{frameNumber.toLocaleString()}</dd></div>

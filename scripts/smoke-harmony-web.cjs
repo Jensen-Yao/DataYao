@@ -81,6 +81,15 @@ async function main() {
     console.log("Fake camera entered scan mode");
     const videoReady = await page.locator("video").evaluate((video) => Boolean(video.srcObject));
     if (!videoReady) throw new Error("The receiver entered scan mode without a camera stream.");
+    const stage = await page.locator(".receiver-stage").boundingBox();
+    const controls = await page.locator(".control-rail").boundingBox();
+    const camera = await page.locator(".camera-shell").boundingBox();
+    if (!stage || !controls || stage.y >= controls.y) {
+      throw new Error(`The scanning stage is not above the controls: stage=${JSON.stringify(stage)}, controls=${JSON.stringify(controls)}`);
+    }
+    if (!camera || Math.abs(camera.width - camera.height) > 2) {
+      throw new Error(`The camera shell is not square: ${JSON.stringify(camera)}`);
+    }
 
     const screenshot = path.join(root, "artifacts", "harmony", "DataYao-HarmonyOS-receiver-smoke.png");
     await page.screenshot({ path: screenshot, fullPage: true });

@@ -50,7 +50,9 @@ main { flex: 1; width: min(1360px, calc(100% - 32px)); margin: 0 auto; padding: 
 .source-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; background: #0d161ecc; border: 1px solid #ffffff12; border-radius: 14px; box-shadow: inset 0 1px #ffffff08; }
 .source-switch button { padding: 10px; }
 .file-drop { min-height: 142px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 18px; border: 1px dashed #4e7180; border-radius: 16px; background: #10202acc; color: var(--cyan); text-align: center; box-shadow: var(--shadow-soft); transition: border-color .2s ease, background-color .2s ease, transform .2s ease; }
-.file-drop:hover { border-color: var(--cyan); background: #122834; transform: translateY(-1px); }
+.file-drop:hover, .file-drop.is-dragging { border-color: var(--cyan); background: #122834; transform: translateY(-1px); }
+.file-drop.is-dragging { box-shadow: 0 0 0 3px #63d8ff22, var(--shadow-soft); }
+.file-drop.is-disabled { cursor: not-allowed; opacity: .58; transform: none; }
 .file-drop span { max-width: 100%; overflow-wrap: anywhere; font-size: 14px; font-weight: 800; color: var(--text); }
 .file-drop small { color: var(--muted); font-size: 12px; }
 .file-drop input { display: none; }
@@ -80,7 +82,11 @@ main { flex: 1; width: min(1360px, calc(100% - 32px)); margin: 0 auto; padding: 
 .status-dot.live { background: var(--coral); box-shadow: 0 0 0 5px #ff8f7022; }
 .status-dot.complete { background: var(--green); box-shadow: 0 0 0 5px #6ce0b122; }
 .qr-shell { position: relative; min-height: min(68vh, 720px); display: grid; place-items: center; padding: clamp(18px, 5vw, 64px); background: #071018; }
-.qr-shell canvas { display: block; width: min(100%, 720px); height: auto; image-rendering: pixelated; border: 8px solid #fff; box-shadow: 0 18px 60px #00000055; }
+.qr-shell canvas { display: block; width: min(100%, 720px); max-width: 720px; height: auto; image-rendering: pixelated; border: 8px solid #fff; box-shadow: 0 18px 60px #00000055; transition: width .2s ease; }
+.qr-size-control { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 18px; border-top: 1px solid #ffffff10; background: #0b151d; color: var(--muted); font-size: 12px; }
+.qr-size-control label { white-space: nowrap; }
+.qr-size-control input { flex: 1; min-width: 100px; accent-color: var(--cyan); }
+.qr-size-control output { min-width: 42px; color: var(--cyan); font-weight: 800; text-align: right; }
 .stage-empty { position: absolute; display: grid; justify-items: center; gap: 10px; color: var(--muted); }
 .stage-empty img { width: 62px; height: 62px; opacity: .85; }
 .stage-empty strong { color: var(--text); font-size: 18px; letter-spacing: .1em; }
@@ -90,7 +96,7 @@ main { flex: 1; width: min(1360px, calc(100% - 32px)); margin: 0 auto; padding: 
 dt { color: var(--muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
 dd { margin: 5px 0 0; color: var(--text); font-size: 13px; font-weight: 800; overflow-wrap: anywhere; }
 
-.camera-shell { position: relative; aspect-ratio: 4 / 3; min-height: min(68vh, 720px); background: #050a0e; display: grid; place-items: center; overflow: hidden; }
+.camera-shell { position: relative; aspect-ratio: 1 / 1; min-height: 0; background: #050a0e; display: grid; place-items: center; overflow: hidden; scroll-margin-top: 88px; }
 .camera-shell video { width: 100%; height: 100%; object-fit: cover; display: block; transform: scaleX(1); }
 .camera-placeholder { display: grid; justify-items: center; gap: 12px; color: var(--muted); }
 .camera-placeholder span { font-size: 13px; }
@@ -138,7 +144,9 @@ footer { display: flex; justify-content: space-between; gap: 12px; padding: 18px
   .network-state { display: none; }
   .workspace-grid { grid-template-columns: 1fr; }
   .control-rail { max-width: 720px; }
-  .qr-shell, .camera-shell, .result-panel { min-height: min(72vh, 620px); }
+  .qr-shell, .result-panel { min-height: min(72vh, 620px); }
+  .receiver-workspace.is-running .receiver-stage { order: -1; }
+  .receiver-stage { scroll-margin-top: 88px; }
 }
 
 @media (max-width: 540px) {
@@ -148,6 +156,7 @@ footer { display: flex; justify-content: space-between; gap: 12px; padding: 18px
   .section-heading h1 { font-size: 38px; }
   .stage-metrics, .receive-metrics { grid-template-columns: repeat(2, 1fr); }
   .qr-shell { min-height: 58vh; padding: 12px; }
+  .camera-shell { aspect-ratio: 1 / 1; }
   .qr-shell canvas { border-width: 5px; }
   .result-panel { min-height: 58vh; padding: 24px 16px; }
   footer { flex-direction: column; padding-inline: 12px; }

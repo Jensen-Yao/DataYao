@@ -4,7 +4,7 @@ DataYao 是一个双端离线的动态二维码传输工具：发送端把文件
 
 **在线体验：** [jensen-yao.github.io/DataYao](https://jensen-yao.github.io/DataYao/)
 
-**最新发布：** [Windows Portable ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.0/DataYao-0.2.0-Windows-x64-Portable.zip) · [Android Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.0/DataYao-Receiver-0.2.0-release.apk)
+**最新发布：** [Windows Portable ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.1/DataYao-0.2.1-Windows-x64-Portable.zip) · [Android Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.1/DataYao-Receiver-release.apk) · [HarmonyOS Receiver](https://github.com/Jensen-Yao/DataYao/releases/tag/v0.2.1)
 
 ## 特性
 
@@ -13,6 +13,7 @@ DataYao 是一个双端离线的动态二维码传输工具：发送端把文件
 - **完整性校验**：每个 QR 帧带 CRC32，完整容器恢复后再做 SHA-256 校验。
 - **文件与文本**：保留文件名和 MIME 类型；可选 gzip 压缩，文本支持直接复制。
 - **可调参数**：每帧字节数、播放帧率和 QR 纠错等级可按屏幕、距离和相机能力调节。
+- **便携操作**：发送端支持把文件直接拖入文件区；二维码显示尺寸可用滑块缩小，方便调整拍摄距离。
 - **纯前端**：React + TypeScript + Vite，无后端、无账号、无遥测。
 
 ## 使用方法

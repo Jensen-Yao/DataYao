@@ -71,6 +71,7 @@ export function ReceiverView() {
   const [deviceId, setDeviceId] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const scanCanvasRef = useRef<HTMLCanvasElement>(null);
+  const receiverStageRef = useRef<HTMLElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const decoderRef = useRef<LTDecoder | null>(null);
@@ -191,6 +192,9 @@ export function ReceiverView() {
       if (activeDevice) setDeviceId(activeDevice);
       setRunning(true);
       setStatus("正在搜索数据流");
+      window.requestAnimationFrame(() => {
+        receiverStageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
       if (navigator.wakeLock) {
         wakeLockRef.current = await navigator.wakeLock.request("screen").catch(() => null);
       }
@@ -228,7 +232,7 @@ export function ReceiverView() {
   const rate = elapsed ? stats.validFrames / elapsed : 0;
 
   return (
-    <div className="workspace-grid">
+    <div className={`workspace-grid receiver-workspace${running ? " is-running" : ""}`}>
       <section className="control-rail" aria-label="接收设置">
         <div className="section-heading">
           <h1>接收</h1>
@@ -283,7 +287,7 @@ export function ReceiverView() {
         </div>
       </section>
 
-      <section className="visual-stage receiver-stage" aria-label="摄像头接收画面">
+      <section className="visual-stage receiver-stage" ref={receiverStageRef} aria-label="摄像头接收画面">
         <div className="stage-toolbar">
           <div><span className={`status-dot ${running ? "live" : result ? "complete" : ""}`} />{result ? "校验通过" : running ? "正在扫描" : "等待摄像头"}</div>
         </div>
