@@ -74,6 +74,9 @@ main { flex: 1; width: min(1360px, calc(100% - 32px)); margin: 0 auto; padding: 
 .secondary-button { border: 1px solid var(--line); background: var(--surface-2); color: var(--text); }
 .secondary-button:hover, .secondary-button:focus-visible { border-color: var(--cyan-deep); color: var(--cyan); }
 .error-message { padding: 11px 12px; border-left: 3px solid var(--danger); background: #3b1d21; color: #ffb2aa; font-size: 13px; line-height: 1.45; }
+.scan-diagnostics { display: flex; justify-content: space-between; gap: 10px; padding: 8px 10px; color: var(--muted); font-size: 11px; line-height: 1.35; }
+.scan-diagnostics span { color: var(--text); }
+.scan-diagnostics small { color: var(--muted); white-space: nowrap; }
 
 .visual-stage { min-width: 0; border: 1px solid #ffffff14; border-radius: 18px; background: #0e171f; overflow: hidden; box-shadow: var(--shadow-soft); animation: surface-in .5s .06s ease both; }
 .stage-toolbar { display: flex; align-items: center; justify-content: space-between; min-height: 56px; padding: 0 16px; border-bottom: 1px solid #ffffff10; color: var(--muted); font-size: 12px; background: #111c25b8; backdrop-filter: blur(16px); }

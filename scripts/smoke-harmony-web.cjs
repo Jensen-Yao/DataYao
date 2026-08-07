@@ -90,6 +90,11 @@ async function main() {
     if (!camera || Math.abs(camera.width - camera.height) > 2) {
       throw new Error(`The camera shell is not square: ${JSON.stringify(camera)}`);
     }
+    await page.waitForTimeout(4_000);
+    const diagnostic = await page.locator('[role="alert"]').innerText();
+    if (!diagnostic.includes("未识别到二维码")) {
+      throw new Error(`The receiver did not report a specific no-QR diagnostic: ${diagnostic}`);
+    }
 
     const screenshot = path.join(root, "artifacts", "harmony", "DataYao-HarmonyOS-receiver-smoke.png");
     await page.screenshot({ path: screenshot, fullPage: true });

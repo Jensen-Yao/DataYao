@@ -4,7 +4,7 @@ DataYao 是一个双端离线的动态二维码传输工具：发送端把文件
 
 **在线体验：** [jensen-yao.github.io/DataYao](https://jensen-yao.github.io/DataYao/)
 
-**最新发布：** [Windows Portable ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.1/DataYao-0.2.1-Windows-x64-Portable.zip) · [Android Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.1/DataYao-Receiver-release.apk) · [HarmonyOS Receiver](https://github.com/Jensen-Yao/DataYao/releases/tag/v0.2.1)
+**最新发布：** [Windows Portable ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.2/DataYao-0.2.2-Windows-x64-Portable.zip) · [Android Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.2/DataYao-Receiver-release.apk) · [HarmonyOS Receiver](https://github.com/Jensen-Yao/DataYao/releases/tag/v0.2.2)
 
 ## 特性
 
@@ -40,6 +40,8 @@ npm run package:portable
 ### Android 接收端 APK
 
 Android 工程使用 Capacitor，构建时设置 `VITE_RECEIVER_ONLY=1`，启动后直接进入接收页并隐藏发送入口，只申请摄像头权限。仓库的 `.github/workflows/android.yml` 会在 GitHub Actions 中安装 Android SDK、构建 release APK、使用 GitHub Actions Secrets 中的 JKS 发布密钥签名，并生成 GitHub artifact provenance。
+
+APK 最低支持 Android 7.0（API 24）。扫描阶段需要摄像头权限、后置自动对焦摄像头和足够的二维码屏幕像素；保存文件时会调用 Android 系统文件选择器，用户选择目标目录即可，不需要存储权限。
 
 需要配置的仓库 Secrets：
 

@@ -14,14 +14,20 @@ interface ReceiveStats {
 }
 
 const EMPTY_STATS: ReceiveStats = { validFrames: 0, duplicateFrames: 0, solvedBlocks: 0, blockCount: 0, startedAt: 0 };
+type ScanPhase = "idle" | "searching" | "no-camera-frame" | "no-qr" | "invalid-qr" | "locked" | "complete";
 
-interface HarmonyBridge {
-  requestCameraPermission: () => void;
-  copyText: (message: string) => void;
+interface NativeSaveBridge {
   saveFileStart: (message: string) => void;
   saveFileChunk: (message: string) => void;
   saveFileFinish: (message: string) => void;
 }
+
+interface HarmonyBridge extends NativeSaveBridge {
+  requestCameraPermission: () => void;
+  copyText: (message: string) => void;
+}
+
+interface AndroidBridge extends NativeSaveBridge {}
 
 interface HarmonyResultDetail {
   ok: boolean;
@@ -30,6 +36,14 @@ interface HarmonyResultDetail {
 
 function getHarmonyBridge(): HarmonyBridge | null {
   return (window as Window & { DataYaoHarmony?: HarmonyBridge }).DataYaoHarmony ?? null;
+}
+
+function getAndroidBridge(): AndroidBridge | null {
+  return (window as Window & { DataYaoAndroid?: AndroidBridge }).DataYaoAndroid ?? null;
+}
+
+function getNativeSaveBridge(): NativeSaveBridge | null {
+  return getHarmonyBridge() ?? getAndroidBridge();
 }
 
 function requestHarmonyCameraPermission(): Promise<void> {
@@ -67,6 +81,8 @@ export function ReceiverView() {
   const [error, setError] = useState("");
   const [stats, setStats] = useState<ReceiveStats>(EMPTY_STATS);
   const [result, setResult] = useState<TransferResult | null>(null);
+  const [scanPhase, setScanPhase] = useState<ScanPhase>("idle");
+  const [qrDetections, setQrDetections] = useState(0);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -77,6 +93,10 @@ export function ReceiverView() {
   const decoderRef = useRef<LTDecoder | null>(null);
   const streamKeyRef = useRef("");
   const completedRef = useRef(false);
+  const scanStartedAtRef = useRef(0);
+  const lastQrAtRef = useRef(0);
+  const lastDiagnosticAtRef = useRef(0);
+  const invalidQrFramesRef = useRef(0);
 
   useEffect(() => {
     if (!running) return;
@@ -89,24 +109,49 @@ export function ReceiverView() {
       const video = videoRef.current;
       const canvas = scanCanvasRef.current;
       if (video && canvas && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
-        const sourceSize = Math.min(video.videoWidth, video.videoHeight);
-        const scanSize = Math.min(960, sourceSize);
-        canvas.width = scanSize;
-        canvas.height = scanSize;
+        const scale = Math.min(1, 960 / Math.max(video.videoWidth, video.videoHeight));
+        const scanWidth = Math.max(1, Math.round(video.videoWidth * scale));
+        const scanHeight = Math.max(1, Math.round(video.videoHeight * scale));
+        canvas.width = scanWidth;
+        canvas.height = scanHeight;
         const context = canvas.getContext("2d", { willReadFrequently: true });
         if (context) {
-          const sourceX = (video.videoWidth - sourceSize) / 2;
-          const sourceY = (video.videoHeight - sourceSize) / 2;
-          context.drawImage(video, sourceX, sourceY, sourceSize, sourceSize, 0, 0, scanSize, scanSize);
-          const image = context.getImageData(0, 0, scanSize, scanSize);
-          const decoded = jsQR(image.data, scanSize, scanSize, { inversionAttempts: "dontInvert" });
+          context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, scanWidth, scanHeight);
+          const image = context.getImageData(0, 0, scanWidth, scanHeight);
+          const decoded = jsQR(image.data, scanWidth, scanHeight, { inversionAttempts: "attemptBoth" });
           if (decoded?.binaryData?.length) {
+            lastQrAtRef.current = now;
+            setQrDetections((count) => count + 1);
             try {
-              await acceptFrame(Uint8Array.from(decoded.binaryData));
+              const accepted = await acceptFrame(Uint8Array.from(decoded.binaryData));
+              if (!accepted && !decoderRef.current) {
+                invalidQrFramesRef.current += 1;
+                setScanPhase("invalid-qr");
+                setStatus("二维码不是 DataYao 帧");
+                if (invalidQrFramesRef.current === 1 || now - lastDiagnosticAtRef.current > 3000) {
+                  setError("已识别到二维码，但不是 DataYao 数据帧。请确认发送端正在播放 DataYao。");
+                  lastDiagnosticAtRef.current = now;
+                }
+              }
             } catch (cause) {
+              setScanPhase("invalid-qr");
               setError(cause instanceof Error ? cause.message : String(cause));
             }
           }
+        }
+      }
+      if (scanStartedAtRef.current && now - scanStartedAtRef.current > 3500 && now - lastDiagnosticAtRef.current > 2500) {
+        const hasVideoFrame = Boolean(video && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0);
+        if (!hasVideoFrame) {
+          setScanPhase("no-camera-frame");
+          setStatus("摄像头没有视频帧");
+          setError("摄像头已打开，但没有收到视频帧。请检查系统权限、摄像头占用情况或更换摄像头。");
+          lastDiagnosticAtRef.current = now;
+        } else if (!lastQrAtRef.current) {
+          setScanPhase("no-qr");
+          setStatus("未识别到二维码");
+          setError("未识别到二维码。请将发送端二维码调到 100%，置于画面中央，并降低到 10–15 fps。");
+          lastDiagnosticAtRef.current = now;
         }
       }
       if (now - lastStatsAt > 250) {
@@ -125,9 +170,9 @@ export function ReceiverView() {
       frameHandle = requestAnimationFrame(scan);
     };
 
-    async function acceptFrame(bytes: Uint8Array) {
+    async function acceptFrame(bytes: Uint8Array): Promise<boolean> {
       const parsed = parseFrame(bytes);
-      if (!parsed) return;
+      if (!parsed) return false;
       const key = streamKey(parsed.header);
       if (key !== streamKeyRef.current) {
         decoderRef.current = new LTDecoder(
@@ -138,20 +183,23 @@ export function ReceiverView() {
         );
         streamKeyRef.current = key;
         setStats({ ...EMPTY_STATS, blockCount: parsed.header.blockCount, startedAt: performance.now() });
+        setScanPhase("locked");
         setStatus("已锁定数据流");
         setError("");
       }
       const decoder = decoderRef.current!;
       decoder.add(parsed.header.sequence, parsed.block);
-      if (!decoder.complete) return;
+      if (!decoder.complete) return true;
       const container = decoder.assemble();
       if (!container || crc32(container) !== parsed.header.payloadCrc) throw new Error("CRC32 校验失败");
       completedRef.current = true;
       const unpacked = await unpackTransfer(container);
       setResult(unpacked);
+      setScanPhase("complete");
       setStatus("接收完成");
       setStats((current) => ({ ...current, validFrames: decoder.framesNew, duplicateFrames: decoder.framesDuplicate, solvedBlocks: decoder.solvedCount }));
       stopCamera();
+      return true;
     }
 
     frameHandle = requestAnimationFrame(scan);
@@ -168,6 +216,11 @@ export function ReceiverView() {
     decoderRef.current = null;
     streamKeyRef.current = "";
     setStats(EMPTY_STATS);
+    setScanPhase("searching");
+    setQrDetections(0);
+    lastQrAtRef.current = 0;
+    lastDiagnosticAtRef.current = 0;
+    invalidQrFramesRef.current = 0;
     try {
       await requestHarmonyCameraPermission();
       if (!navigator.mediaDevices?.getUserMedia) throw new Error("当前页面不是安全上下文，摄像头需要 HTTPS");
@@ -190,6 +243,7 @@ export function ReceiverView() {
       setDevices(available);
       const activeDevice = stream.getVideoTracks()[0]?.getSettings().deviceId;
       if (activeDevice) setDeviceId(activeDevice);
+      scanStartedAtRef.current = performance.now();
       setRunning(true);
       setStatus("正在搜索数据流");
       window.requestAnimationFrame(() => {
@@ -218,6 +272,8 @@ export function ReceiverView() {
     setResult(null);
     setError("");
     setStatus("摄像头未启动");
+    setScanPhase("idle");
+    setQrDetections(0);
     setStats(EMPTY_STATS);
     decoderRef.current = null;
     streamKeyRef.current = "";
@@ -267,6 +323,12 @@ export function ReceiverView() {
         </dl>
 
         {error && <div className="error-message" role="alert">{error}</div>}
+        {running && (
+          <div className="scan-diagnostics" aria-live="polite">
+            <span>{scanPhaseLabel(scanPhase)}</span>
+            <small>二维码 {qrDetections} · 有效帧 {stats.validFrames}</small>
+          </div>
+        )}
 
         <div className="primary-actions">
           {!running && !result && (
@@ -307,6 +369,18 @@ export function ReceiverView() {
   );
 }
 
+function scanPhaseLabel(phase: ScanPhase): string {
+  switch (phase) {
+    case "searching": return "正在分析摄像头画面";
+    case "no-camera-frame": return "摄像头没有提供视频帧";
+    case "no-qr": return "没有识别到二维码";
+    case "invalid-qr": return "二维码格式不匹配";
+    case "locked": return "已锁定 DataYao 数据流";
+    case "complete": return "数据流恢复完成";
+    default: return "等待扫描";
+  }
+}
+
 function ResultPanel({ result }: { result: TransferResult }) {
   const text = result.isText ? new TextDecoder().decode(result.bytes) : "";
   const url = useMemo(() => URL.createObjectURL(new Blob([result.bytes as BlobPart], { type: result.mimeType })), [result.bytes, result.mimeType]);
@@ -325,9 +399,11 @@ function ResultPanel({ result }: { result: TransferResult }) {
     };
     window.addEventListener("datayao-harmony-save-result", onSaveResult);
     window.addEventListener("datayao-harmony-copy-result", onCopyResult);
+    window.addEventListener("datayao-android-save-result", onSaveResult);
     return () => {
       window.removeEventListener("datayao-harmony-save-result", onSaveResult);
       window.removeEventListener("datayao-harmony-copy-result", onCopyResult);
+      window.removeEventListener("datayao-android-save-result", onSaveResult);
     };
   }, []);
 
@@ -343,7 +419,7 @@ function ResultPanel({ result }: { result: TransferResult }) {
   }
 
   async function saveFile() {
-    const bridge = getHarmonyBridge();
+    const bridge = getNativeSaveBridge();
     if (!bridge) return;
     setFeedback("正在准备保存…");
     bridge.saveFileStart(JSON.stringify({ name: result.fileName, mimeType: result.mimeType, size: result.bytes.length }));
@@ -367,7 +443,7 @@ function ResultPanel({ result }: { result: TransferResult }) {
       <div className="result-actions">
         {result.isText ? (
           <button className="primary-button" type="button" onClick={copyText}><Copy size={17} /> 复制文本</button>
-        ) : getHarmonyBridge() ? (
+        ) : getNativeSaveBridge() ? (
           <button className="primary-button" type="button" onClick={() => void saveFile()}><Download size={17} /> 保存文件</button>
         ) : (
           <a className="primary-button" href={url} download={result.fileName}><Download size={17} /> 保存文件</a>
