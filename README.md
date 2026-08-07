@@ -29,9 +29,9 @@ DataYao 是一个双端离线的动态二维码传输工具：发送端把文件
 
 | 平台 | 下载 | 说明 |
 | :--- | :--- | :--- |
-| Windows 便携版 | [Portable ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.4/DataYao-0.2.4-Windows-x64-Portable.zip) | 解压即用，包含发送与接收双端 |
-| Android 接收端 | [Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.4/DataYao-Receiver-release.apk) | GitHub Actions 签名，仅接收模式 |
-| HarmonyOS 接收端 | [HarmonyOS ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.4/DataYao-0.2.4-HarmonyOS-unsigned.zip) | 未签名开发验证包，需自行签名后上架 |
+| Windows 便携版 | [Portable ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.5/DataYao-0.2.5-Windows-x64-Portable.zip) | 解压即用，包含发送与接收双端 |
+| Android 接收端 | [Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.5/DataYao-Receiver-release.apk) | GitHub Actions 签名，仅接收模式 |
+| HarmonyOS 接收端 | [HarmonyOS ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.5/DataYao-0.2.5-HarmonyOS-unsigned.zip) | 未签名开发验证包，需自行签名后上架 |
 | Web / PWA | [GitHub Pages](https://jensen-yao.github.io/DataYao/) | 浏览器直接打开，可安装为 PWA |
 
 > 完整发布列表见 [Releases](https://github.com/Jensen-Yao/DataYao/releases)。
@@ -160,7 +160,8 @@ src/workers/     ZXing WASM 解码 Worker
 desktop/         Electron 主进程和 Windows 便携包脚本
 android/         Capacitor Android 接收端工程
 harmony/         HarmonyOS Stage 接收端工程
-scripts/         跨平台构建和鸿蒙资源同步脚本
+scripts/         跨平台构建、鸿蒙资源同步、图标生成脚本
+build/           生成的 Windows ICO 图标
 public/          PWA 静态资源和品牌 Logo（logo.jpg）
 .github/workflows Pages、Windows Portable、Android APK 工作流
 ```
@@ -174,6 +175,7 @@ public/          PWA 静态资源和品牌 Logo（logo.jpg）
 
 ## 更新日志
 
+- **v0.2.5**：补全三端原生启动器图标——Windows exe 图标（rcedit）、Android launcher 图标（全密度 PNG）、HarmonyOS app_icon；新增 `npm run icons` 脚本从 `public/logo.jpg` 一键生成。
 - **v0.2.4**：更换产品 Logo；更新 PWA 图标与 favicon；同步 Windows、Android、HarmonyOS 版本号。
 - **v0.2.3**：接收端改用 ZXing-C++ WASM 双 Worker 解码；默认参数调整为 1200 B / 15 fps；新增光学回环测试。
 - **v0.2.2**：扫描失败显示具体原因；Android 文件保存改用系统文件选择器。

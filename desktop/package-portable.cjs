@@ -1,4 +1,5 @@
 const fs = require("node:fs/promises");
+const fsSync = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
@@ -44,6 +45,26 @@ async function main() {
   await fs.cp(path.join(root, "LICENSE"), path.join(portableDir, "LICENSE"));
   await fs.copyFile(path.join(portableDir, "electron.exe"), path.join(portableDir, "DataYao.exe"));
   await fs.rm(path.join(portableDir, "electron.exe"));
+
+  // Set the executable icon via rcedit.
+  const iconPath = path.join(root, "build", "icon.ico");
+  if (fsSync.existsSync(iconPath)) {
+    const rceditPaths = [
+      path.join(root, "node_modules", "electron-winstaller", "vendor", "rcedit.exe"),
+      path.join(root, "node_modules", "@electron", "rcedit", "bin", "rcedit.exe"),
+    ];
+    const rcedit = rceditPaths.find((p) => fsSync.existsSync(p));
+    if (rcedit) {
+      const exePath = path.join(portableDir, "DataYao.exe");
+      const r1 = spawnSync(rcedit, [exePath, "--set-icon", iconPath], { stdio: "inherit" });
+      if (r1.status !== 0) throw new Error(`rcedit --set-icon failed with exit code ${r1.status}`);
+      console.log("Set executable icon:", iconPath);
+    } else {
+      console.warn("rcedit.exe not found; skipping icon replacement on DataYao.exe");
+    }
+  } else {
+    console.warn("build/icon.ico not found; skipping icon replacement. Run `npm run icons` first.");
+  }
 
   const quote = (value) => `'${value.replaceAll("'", "''")}'`;
   const source = path.join(portableDir, "*");
