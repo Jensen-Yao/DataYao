@@ -1,4 +1,4 @@
-name: Build Windows Portable
+name: Build Native Windows Senders
 
 on:
   workflow_dispatch:
@@ -6,12 +6,12 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
   attestations: write
 
 jobs:
-  portable:
+  native-portable:
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -22,18 +22,50 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install dependencies
-        run: npm ci
-      - name: Build portable executable
-        run: npm run package:portable
-        env:
-          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
-      - name: Upload portable package
+        run: npm ci --ignore-scripts
+      - name: Download verified Go toolchains
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $toolchains = Join-Path $env:RUNNER_TEMP "datayao-go"
+          New-Item -ItemType Directory -Path $toolchains -Force | Out-Null
+          $items = @(
+            @{ Name = "go1.10.8-386"; File = "go1.10.8.windows-386.zip"; Sha = "9DED97D830BEF3734EA6DE70DF0159656D6A63E01484175B34D72B8DB326BDA0" },
+            @{ Name = "go1.26.5-amd64"; File = "go1.26.5.windows-amd64.zip"; Sha = "97E6B2A833B6D89F9FF17D25419AC0A7E3B482A044E9AB18CDEF834BD834FD38" }
+          )
+          foreach ($item in $items) {
+            $zip = Join-Path $toolchains $item.File
+            Invoke-WebRequest "https://go.dev/dl/$($item.File)" -OutFile $zip
+            $actual = (Get-FileHash $zip -Algorithm SHA256).Hash
+            if ($actual -ne $item.Sha) { throw "SHA-256 mismatch for $($item.File): $actual" }
+            $destination = Join-Path $toolchains $item.Name
+            Expand-Archive -LiteralPath $zip -DestinationPath $destination
+          }
+          "LEGACY_GO=$toolchains\go1.10.8-386\go\bin\go.exe" | Out-File $env:GITHUB_ENV -Append
+          "MODERN_GO=$toolchains\go1.26.5-amd64\go\bin\go.exe" | Out-File $env:GITHUB_ENV -Append
+      - name: Build and test native portable packages
+        shell: pwsh
+        run: ./scripts/build-native-windows.ps1 -LegacyGo "$env:LEGACY_GO" -ModernGo "$env:MODERN_GO"
+      - name: Upload portable packages
         uses: actions/upload-artifact@v4
         with:
-          name: datayao-windows-portable
-          path: artifacts/desktop/*.zip
+          name: datayao-native-windows-portable
+          path: |
+            artifacts/native/*.zip
+            artifacts/native/SHA256SUMS.txt
           if-no-files-found: error
-      - name: Attest portable package
+      - name: Attest portable packages
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: artifacts/desktop/*.zip
+          subject-path: artifacts/native/*.zip
+      - name: Publish tagged release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${{ github.ref_name }}" *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create "${{ github.ref_name }}" --title "DataYao ${{ github.ref_name }}" --generate-notes
+          }
+          gh release upload "${{ github.ref_name }}" artifacts/native/*.zip artifacts/native/SHA256SUMS.txt --clobber

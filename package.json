@@ -10,6 +10,7 @@
     "build:desktop": "npm run build",
     "icons": "node scripts/generate-icons.cjs",
     "package:portable": "npm run icons && npm run build:desktop && node desktop/package-portable.cjs",
+    "package:native": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-native-windows.ps1",
     "build:harmony:web": "cross-env VITE_RECEIVER_ONLY=1 VITE_HARMONY=1 vite build --config vite.config.harmony.ts",
     "build:harmony": "npm run icons && node scripts/build-harmony.cjs",
     "test:harmony:web": "node scripts/smoke-harmony-web.cjs",

@@ -1,8 +1,9 @@
 /**
- * Generate platform icons from public/logo.jpg.
+ * Generate platform icons from logo/logo.jpg, the canonical product logo.
  *
  * Produces:
- *   - build/icon.ico               (Windows multi-size ICO with PNG entries)
+ *   - public/logo.jpg              (web/PWA copy)
+ *   - build/icon.ico               (XP BMP + modern PNG ICO entries)
  *   - Android launcher PNGs         (ic_launcher, ic_launcher_round, ic_launcher_foreground)
  *   - HarmonyOS app_icon.png        (216x216)
  *
@@ -13,7 +14,8 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
-const sourceLogo = path.join(root, "public", "logo.jpg");
+const sourceLogo = path.join(root, "logo", "logo.jpg");
+const publicLogo = path.join(root, "public", "logo.jpg");
 const buildDir = path.join(root, "build");
 
 // ---------- helpers ----------
@@ -47,14 +49,49 @@ function readPng(filePath) {
   return fs.readFileSync(filePath);
 }
 
-function createIco(pngEntries, icoPath) {
-  // ICO with PNG entries (supported on Windows Vista+).
-  const count = pngEntries.length;
+function resizeBmp(srcJpg, destBmp, size) {
+  const script = `
+Add-Type -AssemblyName System.Drawing
+$src = [System.Drawing.Image]::FromFile('${srcJpg.replace(/'/g, "''")}')
+$bmp = [System.Drawing.Bitmap]::new(${size}, ${size}, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+$g.Clear([System.Drawing.Color]::White)
+$g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+$g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+$g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+$g.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+$g.DrawImage($src, 0, 0, ${size}, ${size})
+$bmp.Save('${destBmp.replace(/'/g, "''")}', [System.Drawing.Imaging.ImageFormat]::Bmp)
+$g.Dispose(); $bmp.Dispose(); $src.Dispose()
+`;
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { stdio: "pipe" });
+  if (result.status !== 0) {
+    throw new Error(`PowerShell BMP resize failed (${result.status}): ${result.stderr?.toString()}`);
+  }
+}
+
+function readBmpIcoEntry(filePath, size) {
+  const bmp = fs.readFileSync(filePath);
+  const pixelOffset = bmp.readUInt32LE(10);
+  const dib = Buffer.from(bmp.subarray(14, pixelOffset));
+  if (dib.readUInt32LE(0) !== 40 || dib.readUInt16LE(14) !== 32 || dib.readUInt32LE(16) !== 0) {
+    throw new Error(`Unexpected BMP format for XP icon entry: ${filePath}`);
+  }
+  dib.writeInt32LE(size * 2, 8); // ICO stores XOR and AND mask heights together.
+  const pixels = bmp.subarray(pixelOffset);
+  const maskStride = Math.ceil(size / 32) * 4;
+  const andMask = Buffer.alloc(maskStride * size);
+  return Buffer.concat([dib, pixels, andMask]);
+}
+
+function createIco(iconEntries, icoPath) {
+  // BMP/DIB entries keep XP compatibility; PNG entries preserve modern detail.
+  const count = iconEntries.length;
   const headerSize = 6;
   const dirEntrySize = 16;
   let offset = headerSize + dirEntrySize * count;
   const entries = [];
-  for (const { size, data } of pngEntries) {
+  for (const { size, data } of iconEntries) {
     entries.push({
       width: size >= 256 ? 0 : size,
       height: size >= 256 ? 0 : size,
@@ -90,20 +127,28 @@ function main() {
   if (!fs.existsSync(sourceLogo)) {
     throw new Error(`Source logo not found: ${sourceLogo}`);
   }
+  ensureDir(path.dirname(publicLogo));
+  fs.copyFileSync(sourceLogo, publicLogo);
   ensureDir(buildDir);
   const tmpDir = path.join(buildDir, "tmp");
   ensureDir(tmpDir);
 
-  const icoSizes = [16, 32, 48, 64, 128, 256];
-  console.log("Generating Windows ICO sizes:", icoSizes.join(", "));
-  const icoPngs = [];
-  for (const s of icoSizes) {
+  const legacyIcoSizes = [16, 32, 48];
+  const modernIcoSizes = [64, 128, 256];
+  console.log("Generating Windows ICO sizes:", [...legacyIcoSizes, ...modernIcoSizes].join(", "));
+  const icoEntries = [];
+  for (const s of legacyIcoSizes) {
+    const bmpPath = path.join(tmpDir, `icon-${s}.bmp`);
+    resizeBmp(sourceLogo, bmpPath, s);
+    icoEntries.push({ size: s, data: readBmpIcoEntry(bmpPath, s) });
+  }
+  for (const s of modernIcoSizes) {
     const pngPath = path.join(tmpDir, `icon-${s}.png`);
     resizePng(sourceLogo, pngPath, s);
-    icoPngs.push({ size: s, data: readPng(pngPath) });
+    icoEntries.push({ size: s, data: readPng(pngPath) });
   }
   const icoPath = path.join(buildDir, "icon.ico");
-  createIco(icoPngs, icoPath);
+  createIco(icoEntries, icoPath);
   console.log("Created", icoPath);
 
   // Android launcher icons

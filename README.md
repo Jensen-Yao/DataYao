@@ -29,7 +29,8 @@ DataYao 是一个双端离线的动态二维码传输工具：发送端把文件
 
 | 平台 | 下载 | 说明 |
 | :--- | :--- | :--- |
-| Windows 便携版 | [Portable ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.5/DataYao-0.2.5-Windows-x64-Portable.zip) | 解压即用，包含发送与接收双端 |
+| Windows XP / 7 发送端 | [Legacy x86 ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.5/DataYao-0.2.5-Windows-XP-Win7-x86-Portable.zip) | 原生 32 位，约 2 MB，解压即用，不依赖运行库 |
+| Windows 10 / 11 发送端 | [Modern x64 ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.5/DataYao-0.2.5-Windows-Win10-Win11-x64-Portable.zip) | 原生 64 位，约 3 MB，解压即用，不依赖 WebView2 |
 | Android 接收端 | [Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.5/DataYao-Receiver-release.apk) | GitHub Actions 签名，仅接收模式 |
 | HarmonyOS 接收端 | [HarmonyOS ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.5/DataYao-0.2.5-HarmonyOS-unsigned.zip) | 未签名开发验证包，需自行签名后上架 |
 | Web / PWA | [GitHub Pages](https://jensen-yao.github.io/DataYao/) | 浏览器直接打开，可安装为 PWA |
@@ -57,17 +58,24 @@ DataYao 是一个双端离线的动态二维码传输工具：发送端把文件
 
 ## 便携版与移动端
 
-### Windows 双端便携版
+### Windows 原生便携发送端
 
-便携版包含发送和接收两个模式，解压后直接运行 `DataYao.exe`，不写入安装目录，也不要求 Node.js。它把同一套离线 Web 核心放进 Electron Runtime，Windows 摄像头权限由系统首次启动时请求。
+Windows 发送端采用同一套 Go/Win32 源码生成两个小型版本，解压后直接运行 `DataYao.exe`。它不写注册表，不要求 Node.js、.NET、WebView2、浏览器或网络连接；文件拖放、文本发送、动态二维码、每帧字节/FPS/ECC 调节、二维码缩放和全屏显示均保留。
+
+- **Legacy x86**：使用 Go 1.10.8 和 `GO386=387` 构建，目标为 Windows XP SP3 / Windows 7 及其他 32 位老机器。
+- **Modern x64**：使用 Go 1.26.5 x64 构建，目标为 Windows 10 / 11。
+
+两者生成完全相同的 DataYao 协议帧，可由现有 Android、HarmonyOS 和 Web 接收端直接扫描。Windows 包只承担发送，因此接收端仍仅依赖手机摄像头，不需要与发送电脑联网。
 
 本地生成：
 
-```bash
-npm run package:portable
+```powershell
+npm run package:native
 ```
 
-产物位于 `artifacts/desktop/`：`DataYao-<version>-Windows-x64-Portable.zip`。该包体积较大，因为包含 Chromium 运行时；这是为了保证解压即用，不依赖用户预装浏览器。
+产物位于 `artifacts/native/`，包括两个便携 ZIP、独立 EXE 和 `SHA256SUMS.txt`。构建会分别运行 Go 1.10.8/x86 与现代 Go/x64 协议测试、检查 PE 架构、注入统一产品 Logo，并执行二维码自测。
+
+> Legacy EXE 已在当前 Windows 的 32 位兼容层完成启动和协议测试；正式发布前仍建议在真实 Windows XP SP3 与 Windows 7 虚拟机各做一次拖放、全屏和长时间播放测试。
 
 ### Android 接收端 APK
 
@@ -147,6 +155,7 @@ npm run build
 npm run test:optical
 npm run preview
 npm run package:portable
+npm run package:native
 npm run build:android
 npm run build:harmony
 ```
@@ -158,11 +167,13 @@ src/components/  发送端和接收端 UI
 src/core/        QR、协议、CRC/SHA-256、LT fountain code
 src/workers/     ZXing WASM 解码 Worker
 desktop/         Electron 主进程和 Windows 便携包脚本
+native-sender/   XP/Win7 x86 与 Win10/11 x64 原生发送端源码
 android/         Capacitor Android 接收端工程
 harmony/         HarmonyOS Stage 接收端工程
 scripts/         跨平台构建、鸿蒙资源同步、图标生成脚本
-build/           生成的 Windows ICO 图标
-public/          PWA 静态资源和品牌 Logo（logo.jpg）
+build/           生成的 Windows 混合格式 ICO 图标
+logo/            所有产品端的品牌 Logo 唯一源文件
+public/          PWA 静态资源和品牌 Logo 副本
 .github/workflows Pages、Windows Portable、Android APK 工作流
 ```
 
@@ -175,7 +186,7 @@ public/          PWA 静态资源和品牌 Logo（logo.jpg）
 
 ## 更新日志
 
-- **v0.2.5**：补全三端原生启动器图标——Windows exe 图标（rcedit）、Android launcher 图标（全密度 PNG）、HarmonyOS app_icon；新增 `npm run icons` 脚本从 `public/logo.jpg` 一键生成。
+- **v0.2.5**：新增约 2 MB 的 XP/Win7 x86 与约 3 MB 的 Win10/11 x64 原生便携发送端；补全 Windows、Android、HarmonyOS 统一品牌图标，并支持从 `logo/logo.jpg` 一键生成。
 - **v0.2.4**：更换产品 Logo；更新 PWA 图标与 favicon；同步 Windows、Android、HarmonyOS 版本号。
 - **v0.2.3**：接收端改用 ZXing-C++ WASM 双 Worker 解码；默认参数调整为 1200 B / 15 fps；新增光学回环测试。
 - **v0.2.2**：扫描失败显示具体原因；Android 文件保存改用系统文件选择器。
