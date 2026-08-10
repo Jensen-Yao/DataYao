@@ -17,6 +17,12 @@
   <a href="#下载">下载</a>
 </p>
 
+<p align="center">
+  <a href="https://jensen-yao.github.io/DataYao/">
+    <img src="public/datayao-native-sender.png" alt="DataYao Windows 原生发送端播放动态二维码" width="960" />
+  </a>
+</p>
+
 ---
 
 ## 概述
@@ -24,6 +30,16 @@
 DataYao 是一个双端离线的动态二维码传输工具：发送端把文件或文本编码为连续 QR 帧，接收端只使用摄像头扫描并在本地恢复。传输链路不需要 Wi-Fi、蓝牙、移动网络或服务器，也不包含加密层，适合临时、低依赖的近距离数据搬运。
 
 **在线体验：** [jensen-yao.github.io/DataYao](https://jensen-yao.github.io/DataYao/)
+
+## 项目首页与在线使用
+
+GitHub Pages 首页集中展示协议原理、接收诊断、平台差异和当前发布包。顶部导航可以直接进入完整的 Web 发送端与接收端：
+
+- [打开项目首页](https://jensen-yao.github.io/DataYao/)
+- [直接进入发送端](https://jensen-yao.github.io/DataYao/#send)
+- [直接进入接收端](https://jensen-yao.github.io/DataYao/#receive)
+
+Web 版首次加载后会缓存为 PWA，后续可离线运行。浏览器接收端需要 HTTPS 与摄像头权限；需要长期在隔离环境中使用时，建议提前打开一次页面完成缓存，或安装 Android 接收端 APK。Windows 原生便携版完全不依赖浏览器、WebView2 或网络，适合断网电脑和旧系统。
 
 ## 下载
 
