@@ -2,9 +2,11 @@ import QrDecodeWorker from "../workers/qrDecode.worker?worker";
 
 interface DecodeResponse {
   id: number;
-  bytes: ArrayBuffer | null;
+  frames: ArrayBuffer[];
   error?: string;
 }
+
+export type QrCarrierMode = "qr" | "color";
 
 export class QrDecodePool {
   private readonly workers: Worker[] = [];
@@ -14,6 +16,7 @@ export class QrDecodePool {
 
   constructor(
     count: number,
+    private readonly mode: QrCarrierMode,
     private readonly onDecoded: (bytes: Uint8Array) => void,
     private readonly onError: (message: string) => void,
   ) {
@@ -27,7 +30,7 @@ export class QrDecodePool {
         }
         this.completedFrames += 1;
         if (event.data.error) this.onError(event.data.error);
-        if (event.data.bytes) this.onDecoded(new Uint8Array(event.data.bytes));
+        for (const frame of event.data.frames) this.onDecoded(new Uint8Array(frame));
       };
       worker.onerror = (event) => {
         this.busy[index] = false;
@@ -56,6 +59,7 @@ export class QrDecodePool {
     this.busy[index] = true;
     this.workers[index]!.postMessage({
       id: this.nextFrameId++,
+      mode: this.mode,
       buffer: image.data.buffer,
       width: image.width,
       height: image.height,

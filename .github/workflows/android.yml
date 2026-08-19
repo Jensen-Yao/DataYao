@@ -6,7 +6,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
   attestations: write
 
@@ -70,3 +70,12 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: artifacts/DataYao-Receiver-release.apk
+      - name: Publish tagged release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${{ github.ref_name }}" >/dev/null 2>&1 || \
+            gh release create "${{ github.ref_name }}" --title "DataYao ${{ github.ref_name }}" --generate-notes
+          gh release upload "${{ github.ref_name }}" artifacts/DataYao-Receiver-release.apk --clobber

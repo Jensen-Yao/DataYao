@@ -19,6 +19,10 @@
     {
       "name": "camera_permission_reason",
       "value": "Used to scan DataYao dynamic QR frames on this device."
+    },
+    {
+      "name": "microphone_permission_reason",
+      "value": "Used to receive DataYao audio frames from a nearby device."
     }
   ]
 }

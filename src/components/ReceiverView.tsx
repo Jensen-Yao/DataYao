@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Camera, CheckCircle2, Copy, Download, RefreshCw, ScanLine, Square } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AudioLines, Camera, CheckCircle2, Copy, Download, RefreshCw, ScanLine, Square } from "lucide-react";
+import { AudioFrameDecoder } from "../core/audio";
 import { crc32 } from "../core/checksum";
 import { LTDecoder } from "../core/fountain";
 import { parseFrame, streamKey, unpackTransfer, type TransferResult } from "../core/protocol";
-import { QrDecodePool } from "../core/qrDecodePool";
+import { QrDecodePool, type QrCarrierMode } from "../core/qrDecodePool";
 
 interface ReceiveStats {
   validFrames: number;
@@ -14,7 +15,8 @@ interface ReceiveStats {
 }
 
 const EMPTY_STATS: ReceiveStats = { validFrames: 0, duplicateFrames: 0, solvedBlocks: 0, blockCount: 0, startedAt: 0 };
-type ScanPhase = "idle" | "searching" | "no-camera-frame" | "no-qr" | "invalid-qr" | "decoder-error" | "locked" | "complete";
+type ReceiveCarrierMode = QrCarrierMode | "sound";
+type ScanPhase = "idle" | "searching" | "listening" | "no-camera-frame" | "no-audio" | "no-qr" | "invalid-qr" | "invalid-audio" | "decoder-error" | "locked" | "complete";
 
 interface ScanActivity {
   capturedFrames: number;
@@ -33,6 +35,7 @@ interface NativeSaveBridge {
 
 interface HarmonyBridge extends NativeSaveBridge {
   requestCameraPermission: () => void;
+  requestMicrophonePermission: () => void;
   copyText: (message: string) => void;
 }
 
@@ -79,6 +82,30 @@ function requestHarmonyCameraPermission(): Promise<void> {
   });
 }
 
+function requestHarmonyMicrophonePermission(): Promise<void> {
+  const bridge = getHarmonyBridge();
+  if (!bridge) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener("datayao-harmony-microphone-permission", onResult);
+      window.clearTimeout(timeout);
+      error ? reject(error) : resolve();
+    };
+    const onResult = (event: Event) => {
+      const detail = (event as CustomEvent<CameraPermissionDetail>).detail;
+      if (detail?.granted) finish();
+      else finish(new Error(detail?.message || "麦克风权限未授予"));
+    };
+    const timeout = window.setTimeout(() => finish(new Error("鸿蒙麦克风授权响应超时")), 15_000);
+    window.addEventListener("datayao-harmony-microphone-permission", onResult);
+    bridge.requestMicrophonePermission();
+  });
+}
+
 interface CameraPermissionDetail {
   granted: boolean;
   message?: string;
@@ -93,6 +120,7 @@ type FocusConstraintSet = MediaTrackConstraintSet & { focusMode?: string };
 
 export function ReceiverView() {
   const [running, setRunning] = useState(false);
+  const [carrier, setCarrier] = useState<ReceiveCarrierMode>("qr");
   const [status, setStatus] = useState("摄像头未启动");
   const [error, setError] = useState("");
   const [stats, setStats] = useState<ReceiveStats>(EMPTY_STATS);
@@ -106,6 +134,9 @@ export function ReceiverView() {
   const scanCanvasRef = useRef<HTMLCanvasElement>(null);
   const receiverStageRef = useRef<HTMLElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const decoderRef = useRef<LTDecoder | null>(null);
   const streamKeyRef = useRef("");
@@ -119,14 +150,48 @@ export function ReceiverView() {
   const droppedFramesRef = useRef(0);
   const decoderErrorRef = useRef("");
 
+  const acceptFrame = useCallback(async (bytes: Uint8Array): Promise<boolean> => {
+    if (completedRef.current) return false;
+    const parsed = parseFrame(bytes);
+    if (!parsed) return false;
+    const key = streamKey(parsed.header);
+    if (key !== streamKeyRef.current) {
+      decoderRef.current = new LTDecoder(
+        parsed.header.blockCount,
+        parsed.header.blockSize,
+        parsed.header.sessionId,
+        parsed.header.totalLength,
+      );
+      streamKeyRef.current = key;
+      setStats({ ...EMPTY_STATS, blockCount: parsed.header.blockCount, startedAt: performance.now() });
+      setScanPhase("locked");
+      setStatus("已锁定数据流");
+      setError("");
+    }
+    const decoder = decoderRef.current!;
+    decoder.add(parsed.header.sequence, parsed.block);
+    if (!decoder.complete) return true;
+    const container = decoder.assemble();
+    if (!container || crc32(container) !== parsed.header.payloadCrc) throw new Error("CRC32 校验失败");
+    completedRef.current = true;
+    const unpacked = await unpackTransfer(container);
+    setResult(unpacked);
+    setScanPhase("complete");
+    setStatus("接收完成");
+    setStats((current) => ({ ...current, validFrames: decoder.framesNew, duplicateFrames: decoder.framesDuplicate, solvedBlocks: decoder.solvedCount }));
+    stopCamera(true);
+    return true;
+  }, []);
+
   useEffect(() => {
-    if (!running) return;
+    if (!running || carrier === "sound") return;
     let cancelled = false;
     let animationFrameHandle = 0;
     let videoFrameHandle = 0;
     const scanContext = scanCanvasRef.current?.getContext("2d", { willReadFrequently: true }) ?? null;
     const pool = new QrDecodePool(
       2,
+      carrier,
       (bytes) => {
         if (cancelled || completedRef.current) return;
         const now = performance.now();
@@ -242,38 +307,6 @@ export function ReceiverView() {
       }
     }, 250);
 
-    async function acceptFrame(bytes: Uint8Array): Promise<boolean> {
-      const parsed = parseFrame(bytes);
-      if (!parsed) return false;
-      const key = streamKey(parsed.header);
-      if (key !== streamKeyRef.current) {
-        decoderRef.current = new LTDecoder(
-          parsed.header.blockCount,
-          parsed.header.blockSize,
-          parsed.header.sessionId,
-          parsed.header.totalLength,
-        );
-        streamKeyRef.current = key;
-        setStats({ ...EMPTY_STATS, blockCount: parsed.header.blockCount, startedAt: performance.now() });
-        setScanPhase("locked");
-        setStatus("已锁定数据流");
-        setError("");
-      }
-      const decoder = decoderRef.current!;
-      decoder.add(parsed.header.sequence, parsed.block);
-      if (!decoder.complete) return true;
-      const container = decoder.assemble();
-      if (!container || crc32(container) !== parsed.header.payloadCrc) throw new Error("CRC32 校验失败");
-      completedRef.current = true;
-      const unpacked = await unpackTransfer(container);
-      setResult(unpacked);
-      setScanPhase("complete");
-      setStatus("接收完成");
-      setStats((current) => ({ ...current, validFrames: decoder.framesNew, duplicateFrames: decoder.framesDuplicate, solvedBlocks: decoder.solvedCount }));
-      stopCamera();
-      return true;
-    }
-
     scheduleVideoFrame();
     return () => {
       cancelled = true;
@@ -282,7 +315,111 @@ export function ReceiverView() {
       if (videoFrameHandle && video?.cancelVideoFrameCallback) video.cancelVideoFrameCallback(videoFrameHandle);
       pool.terminate();
     };
-  }, [running]);
+  }, [acceptFrame, carrier, running]);
+
+  useEffect(() => {
+    if (!running || carrier !== "sound") return;
+    const stream = streamRef.current;
+    if (!stream) return;
+    let cancelled = false;
+    const context = audioContextRef.current ?? new AudioContext();
+    audioContextRef.current = context;
+    const decoder = new AudioFrameDecoder(
+      (bytes) => {
+        if (cancelled || completedRef.current) return;
+        lastQrAtRef.current = performance.now();
+        qrDetectionsRef.current += 1;
+        void acceptFrame(bytes).then((accepted) => {
+          if (accepted || completedRef.current || cancelled) return;
+          setScanPhase("invalid-audio");
+          setStatus("音频包不是 DataYao 帧");
+          setError("已收到声音数据，但内容不是 DataYao 音频帧。请确认发送端使用的是声音模式。");
+        }).catch((cause) => {
+          setScanPhase("invalid-audio");
+          setError(cause instanceof Error ? cause.message : String(cause));
+        });
+      },
+      (message) => {
+        if (cancelled) return;
+        setScanPhase("invalid-audio");
+        setStatus("音频帧校验失败");
+        setError(message);
+      },
+      context.sampleRate,
+    );
+    const source = context.createMediaStreamSource(stream);
+    const processor = context.createScriptProcessor(1024, 1, 1);
+    const mute = context.createGain();
+    mute.gain.value = 0;
+    processor.onaudioprocess = (event) => {
+      if (cancelled) return;
+      capturedFramesRef.current += 1;
+      decoder.feed(event.inputBuffer.getChannelData(0));
+    };
+    source.connect(processor);
+    processor.connect(mute);
+    mute.connect(context.destination);
+    audioSourceRef.current = source;
+    audioProcessorRef.current = processor;
+    void context.resume().catch((cause) => {
+      setStatus("麦克风启动失败");
+      setError(cause instanceof Error ? cause.message : String(cause));
+    });
+
+    const diagnosticsTimer = window.setInterval(() => {
+      if (cancelled) return;
+      const now = performance.now();
+      const audioDiagnostics = decoder.diagnostics();
+      setQrDetections(qrDetectionsRef.current);
+      setScanActivity({
+        capturedFrames: capturedFramesRef.current,
+        analyzedFrames: audioDiagnostics.analyzedWindows,
+        droppedFrames: 0,
+        workerCount: 1,
+      });
+      const decoderState = decoderRef.current;
+      if (decoderState) {
+        setStats((current) => ({
+          ...current,
+          validFrames: decoderState.framesNew,
+          duplicateFrames: decoderState.framesDuplicate,
+          solvedBlocks: decoderState.solvedCount,
+          blockCount: decoderState.blockCount,
+        }));
+      }
+      if (scanStartedAtRef.current && now - scanStartedAtRef.current > 8000 && !lastQrAtRef.current && now - lastDiagnosticAtRef.current > 3000) {
+        if (capturedFramesRef.current === 0) {
+          setScanPhase("no-audio");
+          setStatus("麦克风没有音频帧");
+          setError("麦克风已打开，但没有收到音频帧。请检查系统权限、麦克风占用情况或更换设备。");
+        } else {
+          setScanPhase("no-audio");
+          setStatus("未识别到 DataYao 声音");
+          if (audioDiagnostics.detectedWindows === 0) {
+            setError(`麦克风已采集音频，但没有检测到 DTMF 频率。峰值 RMS ${audioDiagnostics.peakRms.toFixed(3)}；请提高发送端音量并将两台设备靠近。`);
+          } else if (audioDiagnostics.syncMatches === 0) {
+            setError(`已检测 ${audioDiagnostics.detectedWindows} 个 DTMF 窗口并组装 ${audioDiagnostics.acceptedSymbols} 个音符，但未找到 DataYao 同步头。请选择稳定速度并关闭系统降噪。`);
+          } else if (audioDiagnostics.crcFailures > 0) {
+            setError(`已找到 DataYao 同步头，但有 ${audioDiagnostics.crcFailures} 个音频包 CRC32 校验失败。请降低环境噪声、提高音量并缩短设备距离。`);
+          } else {
+            setError(`已找到 DataYao 同步头，当前已组装 ${audioDiagnostics.acceptedSymbols} 个音符，正在等待完整音频包。请保持设备位置不动。`);
+          }
+        }
+        lastDiagnosticAtRef.current = now;
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearInterval(diagnosticsTimer);
+      processor.onaudioprocess = null;
+      processor.disconnect();
+      source.disconnect();
+      mute.disconnect();
+      decoder.reset();
+      if (audioProcessorRef.current === processor) audioProcessorRef.current = null;
+      if (audioSourceRef.current === source) audioSourceRef.current = null;
+    };
+  }, [acceptFrame, carrier, running]);
 
   async function startCamera() {
     setError("");
@@ -347,21 +484,82 @@ export function ReceiverView() {
     }
   }
 
-  function stopCamera() {
+  async function startSound() {
+    setError("");
+    setResult(null);
+    completedRef.current = false;
+    decoderRef.current = null;
+    streamKeyRef.current = "";
+    setStats(EMPTY_STATS);
+    setScanPhase("listening");
+    setQrDetections(0);
+    setScanActivity(EMPTY_ACTIVITY);
+    lastQrAtRef.current = 0;
+    lastDiagnosticAtRef.current = 0;
+    qrDetectionsRef.current = 0;
+    capturedFramesRef.current = 0;
+    droppedFramesRef.current = 0;
+    decoderErrorRef.current = "";
+    try {
+      await requestHarmonyMicrophonePermission();
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error("当前页面不支持麦克风访问");
+      const context = audioContextRef.current ?? new AudioContext();
+      audioContextRef.current = context;
+      await context.resume();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+        video: false,
+      });
+      streamRef.current = stream;
+      scanStartedAtRef.current = performance.now();
+      setRunning(true);
+      setStatus("正在监听 DataYao 声音");
+      window.requestAnimationFrame(() => receiverStageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    } catch (cause) {
+      void audioContextRef.current?.close().catch(() => undefined);
+      audioContextRef.current = null;
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setStatus("麦克风启动失败");
+    }
+  }
+
+  function stopCamera(preserveStatus = false) {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     void wakeLockRef.current?.release().catch(() => undefined);
     wakeLockRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    audioProcessorRef.current?.disconnect();
+    audioSourceRef.current?.disconnect();
+    audioProcessorRef.current = null;
+    audioSourceRef.current = null;
+    void audioContextRef.current?.close().catch(() => undefined);
+    audioContextRef.current = null;
     scanStartedAtRef.current = 0;
     setRunning(false);
+    if (!preserveStatus) {
+      setScanPhase("idle");
+      setStatus(carrier === "sound" ? "麦克风未启动" : "摄像头未启动");
+    }
+  }
+
+  function selectCarrier(next: ReceiveCarrierMode) {
+    if (running || next === carrier) return;
+    setCarrier(next);
+    setScanPhase("idle");
+    setStatus(next === "sound" ? "麦克风未启动" : "摄像头未启动");
+    setError("");
   }
 
   function resetReceiver() {
     stopCamera();
     setResult(null);
     setError("");
-    setStatus("摄像头未启动");
+    setStatus(carrier === "sound" ? "麦克风未启动" : "摄像头未启动");
     setScanPhase("idle");
     setQrDetections(0);
     setScanActivity(EMPTY_ACTIVITY);
@@ -383,10 +581,22 @@ export function ReceiverView() {
       <section className="control-rail" aria-label="接收设置">
         <div className="section-heading">
           <h1>接收</h1>
-          <p>启动摄像头并对准发送屏幕。</p>
+          <p>{carrier === "sound" ? "启动麦克风并靠近发送设备。" : "启动摄像头并对准发送屏幕。"}</p>
         </div>
 
-        <label className="camera-select">
+        <div className="carrier-switch" role="tablist" aria-label="接收方式">
+          <button type="button" className={carrier === "qr" ? "active" : ""} onClick={() => selectCarrier("qr")} disabled={running}>
+            <ScanLine size={16} /> QR
+          </button>
+          <button type="button" className={carrier === "color" ? "active color" : "color"} onClick={() => selectCarrier("color")} disabled={running}>
+            <span className="color-swatch" aria-hidden="true" /> 彩色 QR
+          </button>
+          <button type="button" className={carrier === "sound" ? "active sound" : "sound"} onClick={() => selectCarrier("sound")} disabled={running}>
+            <AudioLines size={16} /> 声音
+          </button>
+        </div>
+
+        {carrier !== "sound" && <label className="camera-select">
           <span>摄像头</span>
           <select value={deviceId} onChange={(event) => setDeviceId(event.target.value)} disabled={running}>
             <option value="">自动选择后置摄像头</option>
@@ -394,7 +604,7 @@ export function ReceiverView() {
               <option key={device.deviceId} value={device.deviceId}>{device.label || `摄像头 ${index + 1}`}</option>
             ))}
           </select>
-        </label>
+        </label>}
 
         <div className="receiver-status">
           <ScanLine size={22} />
@@ -410,27 +620,27 @@ export function ReceiverView() {
           <div><dt>有效帧</dt><dd>{stats.validFrames}</dd></div>
           <div><dt>重复帧</dt><dd>{stats.duplicateFrames}</dd></div>
           <div><dt>恢复块</dt><dd>{stats.blockCount ? `${stats.solvedBlocks}/${stats.blockCount}` : "—"}</dd></div>
-          <div><dt>解码速率</dt><dd>{rate ? `${rate.toFixed(1)} fps` : "—"}</dd></div>
+          <div><dt>解码速率</dt><dd>{rate ? (carrier === "sound" ? `${rate.toFixed(2)} 包/s` : `${rate.toFixed(1)} fps`) : "—"}</dd></div>
         </dl>
 
         {error && <div className="error-message" role="alert">{error}</div>}
         {running && (
           <div className="scan-diagnostics" aria-live="polite">
             <span>{scanPhaseLabel(scanPhase)}</span>
-            <small>采集 {scanActivity.capturedFrames} · 分析 {scanActivity.analyzedFrames} · 二维码 {qrDetections}</small>
-            <small>{scanActivity.workerCount} 个解码线程 · 忙时丢帧 {scanActivity.droppedFrames}</small>
+            <small>采集 {scanActivity.capturedFrames} · 分析 {scanActivity.analyzedFrames} · {carrier === "sound" ? "音频包" : "二维码"} {qrDetections}</small>
+            <small>{carrier === "sound" ? `音频包 ${qrDetections} · 解码器 ${scanActivity.workerCount}` : `${scanActivity.workerCount} 个解码线程 · 忙时丢帧 ${scanActivity.droppedFrames}`}</small>
           </div>
         )}
 
         <div className="primary-actions">
           {!running && !result && (
-            <button className="primary-button" type="button" onClick={startCamera}>
-              <Camera size={18} /> 启动摄像头
+            <button className="primary-button" type="button" onClick={carrier === "sound" ? startSound : startCamera}>
+              {carrier === "sound" ? <AudioLines size={18} /> : <Camera size={18} />} 启动{carrier === "sound" ? "麦克风" : "摄像头"}
             </button>
           )}
           {running && (
-            <button className="stop-button" type="button" onClick={stopCamera}>
-              <Square size={17} fill="currentColor" /> 停止扫描
+            <button className="stop-button" type="button" onClick={() => stopCamera()}>
+              <Square size={17} fill="currentColor" /> 停止{carrier === "sound" ? "监听" : "扫描"}
             </button>
           )}
           {result && (
@@ -441,18 +651,26 @@ export function ReceiverView() {
         </div>
       </section>
 
-      <section className="visual-stage receiver-stage" ref={receiverStageRef} aria-label="摄像头接收画面">
+      <section className="visual-stage receiver-stage" ref={receiverStageRef} aria-label={carrier === "sound" ? "声音接收" : "摄像头接收画面"}>
         <div className="stage-toolbar">
-          <div><span className={`status-dot ${running ? "live" : result ? "complete" : ""}`} />{result ? "校验通过" : running ? "正在扫描" : "等待摄像头"}</div>
+          <div><span className={`status-dot ${running ? "live" : result ? "complete" : ""}`} />{result ? "校验通过" : running ? (carrier === "sound" ? "正在监听" : "正在扫描") : (carrier === "sound" ? "等待麦克风" : "等待摄像头")}</div>
         </div>
 
         {!result ? (
-          <div className="camera-shell">
-            <video ref={videoRef} muted playsInline />
-            <canvas ref={scanCanvasRef} hidden />
-            {!running && <div className="camera-placeholder"><Camera size={42} /><span>摄像头画面</span></div>}
-            {running && <div className="scan-guide" aria-hidden="true"><i /><i /><i /><i /></div>}
-          </div>
+          carrier === "sound" ? (
+            <div className="sound-shell">
+              <AudioLines size={56} />
+              <strong>{running ? "正在监听声音" : "声音接收待机"}</strong>
+              <span>让发送设备与本机保持近距离，避免系统降噪。</span>
+            </div>
+          ) : (
+            <div className="camera-shell">
+              <video ref={videoRef} muted playsInline />
+              <canvas ref={scanCanvasRef} hidden />
+              {!running && <div className="camera-placeholder"><Camera size={42} /><span>摄像头画面</span></div>}
+              {running && <div className="scan-guide" aria-hidden="true"><i /><i /><i /><i /></div>}
+            </div>
+          )
         ) : (
           <ResultPanel result={result} />
         )}
@@ -464,9 +682,12 @@ export function ReceiverView() {
 function scanPhaseLabel(phase: ScanPhase): string {
   switch (phase) {
     case "searching": return "正在分析摄像头画面";
+    case "listening": return "正在分析麦克风音频";
     case "no-camera-frame": return "摄像头没有提供视频帧";
+    case "no-audio": return "麦克风没有提供音频帧";
     case "no-qr": return "没有识别到二维码";
     case "invalid-qr": return "二维码格式不匹配";
+    case "invalid-audio": return "音频帧校验失败";
     case "decoder-error": return "ZXing 解码器运行失败";
     case "locked": return "已锁定 DataYao 数据流";
     case "complete": return "数据流恢复完成";

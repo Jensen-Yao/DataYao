@@ -1,7 +1,7 @@
 {
   "name": "datayao",
-  "version": "0.2.5",
-  "description": "Fast, stable offline file transfer over animated QR codes.",
+  "version": "0.3.0",
+  "description": "Fast, stable offline file transfer over QR, color QR, and sound.",
   "private": true,
   "scripts": {
     "dev": "vite",
@@ -24,7 +24,9 @@
     "qr",
     "offline",
     "file-transfer",
-    "fountain-code"
+    "fountain-code",
+    "color-qr",
+    "audio-transfer"
   ],
   "author": "Jensen Yao",
   "license": "MIT",

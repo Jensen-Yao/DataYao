@@ -50,6 +50,19 @@ function Assert-PeMachine([string]$path, [int]$expected) {
   }
 }
 
+function Get-Sha256Hex([string]$path) {
+  $stream = [IO.File]::OpenRead($path)
+  $sha256 = [Security.Cryptography.SHA256]::Create()
+  try {
+    $bytes = $sha256.ComputeHash($stream)
+    return (($bytes | ForEach-Object { $_.ToString("x2") }) -join "")
+  }
+  finally {
+    $sha256.Dispose()
+    $stream.Dispose()
+  }
+}
+
 function Write-Package([string]$archiveName, [string]$folderName, [string]$exePath) {
   $stagingRoot = Join-Path $outputRoot "staging"
   $packageDir = Join-Path $stagingRoot $folderName
@@ -130,9 +143,9 @@ foreach ($exe in @($legacyExe, $modernExe)) {
 $legacyZip = Write-Package "DataYao-$version-Windows-XP-Win7-x86-Portable.zip" "DataYao-Sender-XP-Win7-x86" $legacyExe
 $modernZip = Write-Package "DataYao-$version-Windows-Win10-Win11-x64-Portable.zip" "DataYao-Sender-Win10-Win11-x64" $modernExe
 
-$checksumTargets = @($legacyExe, $modernExe, $legacyZip, $modernZip)
+$checksumTargets = @($legacyZip, $modernZip)
 $checksumLines = foreach ($item in $checksumTargets) {
-  $hash = (Get-FileHash -LiteralPath $item -Algorithm SHA256).Hash.ToLowerInvariant()
+  $hash = Get-Sha256Hex $item
   "$hash  $([IO.Path]::GetFileName($item))"
 }
 [IO.File]::WriteAllLines((Join-Path $outputRoot "SHA256SUMS.txt"), $checksumLines, [Text.Encoding]::ASCII)

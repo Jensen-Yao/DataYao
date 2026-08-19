@@ -31,6 +31,9 @@ function syncWebAssets() {
   for (const item of fs.readdirSync(dist)) {
     fs.cpSync(path.join(dist, item), path.join(rawfile, item), { recursive: true });
   }
+  for (const item of ["logo.jpg", "datayao-mark.svg"]) {
+    fs.copyFileSync(path.join(root, "public", item), path.join(rawfile, item));
+  }
 
   const index = `<!doctype html>
 <html lang="zh-CN">
@@ -85,9 +88,13 @@ function copyArtifact() {
     throw new Error("Hvigor completed but no HarmonyOS .app package was found.");
   }
   const output = path.join(root, "artifacts", "harmony", `DataYao-${packageJson.version}-HarmonyOS-${unsigned ? "unsigned" : "local"}.app`);
+  const archive = path.join(root, "artifacts", "harmony", `DataYao-${packageJson.version}-HarmonyOS-${unsigned ? "unsigned" : "local"}.zip`);
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.copyFileSync(artifact, output);
+  fs.rmSync(archive, { force: true });
+  run("tar.exe", ["-a", "-c", "-f", archive, "-C", path.dirname(output), path.basename(output)]);
   console.log(`HarmonyOS package: ${output}`);
+  console.log(`HarmonyOS archive: ${archive}`);
   console.log(unsigned
     ? "This package is unsigned. Create a DataYao-specific AGC Profile before release signing."
     : "The local package was signed by the configured DevEco material; verify its bundle and profile before upload.");

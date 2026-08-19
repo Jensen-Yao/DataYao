@@ -1,4 +1,5 @@
 import {
+  AudioLines,
   ArrowRight,
   Camera,
   CheckCircle2,
@@ -16,27 +17,27 @@ import {
   Zap,
 } from "lucide-react";
 
-const RELEASE_BASE = "https://github.com/Jensen-Yao/DataYao/releases/download/v0.2.5";
+const RELEASE_BASE = "https://github.com/Jensen-Yao/DataYao/releases/download/v0.3.0";
 
 const downloads = [
   {
     icon: Monitor,
     title: "Windows XP / 7",
-    detail: "原生 x86 发送端 · 827 KB · 解压即用",
-    href: `${RELEASE_BASE}/DataYao-0.2.5-Windows-XP-Win7-x86-Portable.zip`,
+    detail: "原生 x86 发送端 · 约 815 KB · 解压即用",
+    href: `${RELEASE_BASE}/DataYao-0.3.0-Windows-XP-Win7-x86-Portable.zip`,
     action: "下载 Legacy",
   },
   {
     icon: Monitor,
     title: "Windows 10 / 11",
-    detail: "原生 x64 发送端 · 1.13 MB · 无 WebView2",
-    href: `${RELEASE_BASE}/DataYao-0.2.5-Windows-Win10-Win11-x64-Portable.zip`,
+    detail: "原生 x64 发送端 · 约 1.12 MB · 无 WebView2",
+    href: `${RELEASE_BASE}/DataYao-0.3.0-Windows-Win10-Win11-x64-Portable.zip`,
     action: "下载 Modern",
   },
   {
     icon: Smartphone,
     title: "Android 接收端",
-    detail: "签名 APK · Android 7.0+ · 仅摄像头权限",
+    detail: "GitHub 签名 APK · Android 7.0+ · 接收专用",
     href: `${RELEASE_BASE}/DataYao-Receiver-release.apk`,
     action: "下载 APK",
   },
@@ -44,7 +45,7 @@ const downloads = [
     icon: Smartphone,
     title: "HarmonyOS 接收端",
     detail: "未签名开发验证包 · Stage 工程",
-    href: `${RELEASE_BASE}/DataYao-0.2.5-HarmonyOS-unsigned.zip`,
+    href: `${RELEASE_BASE}/DataYao-0.3.0-HarmonyOS-unsigned.zip`,
     action: "下载鸿蒙包",
   },
 ] as const;
@@ -63,7 +64,7 @@ export function HomeView({ onSend, onReceive }: HomeViewProps) {
           <h1>DataYao</h1>
           <p className="home-hero-lead">双端离线的数据通道。</p>
           <p className="home-hero-description">
-            发送端把文件变成连续二维码，接收端只用摄像头恢复数据。没有 Wi-Fi、蓝牙、服务器或账号，也不上传任何内容。
+            发送端把文件变成连续二维码或声音，接收端使用摄像头或麦克风恢复数据。没有 Wi-Fi、蓝牙、服务器或账号，也不上传任何内容。
           </p>
           <div className="home-hero-actions">
             <button className="home-primary-action" type="button" onClick={onSend}>
@@ -84,14 +85,14 @@ export function HomeView({ onSend, onReceive }: HomeViewProps) {
 
       <section className="home-facts" aria-label="DataYao 核心信息">
         <div><strong>0</strong><span>网络依赖</span></div>
-        <div><strong>64 MB</strong><span>单次传输上限</span></div>
-        <div><strong>827 KB</strong><span>Legacy 压缩包</span></div>
-        <div><strong>3</strong><span>完整性校验层</span></div>
+        <div><strong>64 MB</strong><span>QR 单次上限</span></div>
+        <div><strong>815 KB</strong><span>Legacy 压缩包</span></div>
+        <div><strong>3</strong><span>离线载波模式</span></div>
       </section>
 
       <section className="home-section home-how" id="how-it-works">
         <div className="home-section-heading">
-          <h2>屏幕就是发送器，摄像头就是接收器</h2>
+          <h2>屏幕或扬声器，就是离线数据通道</h2>
           <p>同一份数据协议贯穿 Web、Windows、Android 与 HarmonyOS。设备之间不建立连接，隔离网络里也能工作。</p>
         </div>
         <div className="home-steps">
@@ -104,14 +105,14 @@ export function HomeView({ onSend, onReceive }: HomeViewProps) {
           <article>
             <span className="home-step-number">02</span>
             <QrCode size={28} />
-            <h3>播放二维码</h3>
-            <p>LT Fountain 持续生成可乱序、可丢失的二维码帧，不需要接收端返回确认。</p>
+            <h3>选择传输载波</h3>
+            <p>标准 QR 优先稳定，彩色 QR 一帧承载三路数据；声音适合 64 KB 内的短数据兜底。</p>
           </article>
           <article>
             <span className="home-step-number">03</span>
             <Camera size={28} />
-            <h3>摄像头恢复</h3>
-            <p>ZXing WASM 解码画面，收齐独立方程后恢复原文，并再次验证 CRC32 与 SHA-256。</p>
+            <h3>摄像头或麦克风恢复</h3>
+            <p>三种载波都进入同一套 LT Fountain 解码器，恢复后再次验证 CRC32 与 SHA-256。</p>
           </article>
         </div>
       </section>
@@ -121,10 +122,11 @@ export function HomeView({ onSend, onReceive }: HomeViewProps) {
           <div className="home-receiver-copy">
             <h2>看得见每一步，失败也有具体原因</h2>
             <p>
-              接收端分别统计摄像头采集、Worker 分析、二维码识别、有效帧、重复帧和恢复块。相机没出画面、二维码太密或协议不匹配，不再只显示一个停住的 0%。
+              接收端分别统计采集、分析、载波识别、有效帧、重复帧和恢复块。相机没出画面、二维码太密、声音无有效包或协议不匹配，不再只显示一个停住的 0%。
             </p>
             <ul>
               <li><CheckCircle2 size={18} /> 原始摄像头帧直接送入双 Worker</li>
+              <li><AudioLines size={18} /> 声音帧独立校验长度与 CRC32</li>
               <li><CheckCircle2 size={18} /> 忙时丢弃旧画面，避免延迟堆积</li>
               <li><CheckCircle2 size={18} /> 文本可复制，文件通过系统选择器保存</li>
             </ul>
@@ -176,11 +178,12 @@ export function HomeView({ onSend, onReceive }: HomeViewProps) {
       <section className="home-platform-band">
         <div className="home-platform-copy">
           <h2>从 Windows XP 到现代手机</h2>
-          <p>发送端可以来自断网老电脑，接收端只需一部有摄像头的手机。两端不要求处于同一网络，也不交换设备身份。</p>
+          <p>发送端可以来自断网老电脑，接收端只需一部有摄像头和麦克风的手机。两端不要求处于同一网络，也不交换设备身份。</p>
           <div className="home-platform-points">
             <span><WifiOff size={18} /> 全程无网络请求</span>
             <span><ShieldCheck size={18} /> CRC32 + 容器 CRC + SHA-256</span>
             <span><Zap size={18} /> 800–2300 B / 10–30 fps 可调</span>
+            <span><AudioLines size={18} /> 声音模式适合 64 KB 内短数据</span>
           </div>
         </div>
         <img src="./datayao-mobile-sender.png" alt="DataYao 移动端发送界面" />

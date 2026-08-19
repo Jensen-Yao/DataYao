@@ -1,7 +1,7 @@
 {
   "modelVersion": "5.0.0",
   "name": "datayao-harmony",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "description": "DataYao HarmonyOS receiver shell",
   "author": "Jensen-Yao",
   "license": "MIT",

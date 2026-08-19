@@ -5,9 +5,9 @@ This directory is a standalone HarmonyOS Stage project for the receiver-only Dat
 ## Identity
 
 - Bundle name: `io.github.jensenyao.datayao`
-- Version: `0.2.0` (`versionCode` 2)
+- Version: `0.3.0` (`versionCode` 8)
 - Devices: phone, tablet, 2in1
-- Permission: `ohos.permission.CAMERA`
+- Permissions: `ohos.permission.CAMERA`, `ohos.permission.MICROPHONE`
 - Web entry: `entry/src/main/resources/rawfile/datayao/index.html`
 
 Open this `harmony` directory directly in DevEco Studio. Do not open the repository root as a Harmony project.

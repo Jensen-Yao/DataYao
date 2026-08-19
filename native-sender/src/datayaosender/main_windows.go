@@ -36,9 +36,13 @@ const (
 	idStart    = 107
 	idFull     = 108
 	idScale    = 109
+	idCarrier  = 110
 
-	modeFile = 0
-	modeText = 1
+	modeFile     = 0
+	modeText     = 1
+	carrierQR    = 0
+	carrierColor = 1
+	carrierSound = 2
 
 	frameTimerID = 1
 )
@@ -53,6 +57,7 @@ type appState struct {
 	blockCombo     uintptr
 	fpsCombo       uintptr
 	eccCombo       uintptr
+	carrierCombo   uintptr
 	startButton    uintptr
 	fullButton     uintptr
 	scaleTrack     uintptr
@@ -80,23 +85,26 @@ type appState struct {
 	iconSmall          uintptr
 	iconOwned          bool
 
-	dpi         int32
-	mode        int
-	filePath    string
-	fileSize    int64
-	statusError bool
-	running     bool
-	blockSize   int
-	fps         int
-	ecc         qrcode.RecoveryLevel
-	qrScale     int
-	qrPixels    []uint32
-	qrModules   int
-	qrVersion   int
-	sequence    uint32
-	payload     *transferPayload
-	encoder     *fountainEncoder
-	header      frameHeader
+	dpi          int32
+	mode         int
+	carrier      int
+	filePath     string
+	fileSize     int64
+	statusError  bool
+	running      bool
+	blockSize    int
+	fps          int
+	ecc          qrcode.RecoveryLevel
+	audioProfile audioProfile
+	qrScale      int
+	qrPixels     []uint32
+	qrModules    int
+	qrVersion    int
+	sequence     uint32
+	payload      *transferPayload
+	encoder      *fountainEncoder
+	header       frameHeader
+	audioWav     []byte
 }
 
 var app appState
@@ -193,9 +201,11 @@ func initializeResources() error {
 		return fmt.Errorf("无法创建界面字体")
 	}
 	app.mode = modeFile
+	app.carrier = carrierQR
 	app.blockSize = 1200
 	app.fps = 15
 	app.ecc = qrcode.Low
+	app.audioProfile = audioStable
 	app.qrScale = 85
 	return nil
 }
@@ -438,13 +448,16 @@ func createControls(hwnd uintptr) {
 	sendMessage(app.textEdit, wmSetFont, app.font, 1)
 	sendMessage(app.textEdit, emSetLimitText, 4*1024*1024, 0)
 
+	carrierLabel := createLabel("传输方式", app.font)
 	blockLabel := createLabel("每帧字节", app.font)
 	fpsLabel := createLabel("播放帧率", app.font)
 	eccLabel := createLabel("二维码纠错", app.font)
-	app.settingLabels = []uintptr{title, blockLabel, fpsLabel, eccLabel}
+	app.settingLabels = []uintptr{title, carrierLabel, blockLabel, fpsLabel, eccLabel}
+	app.carrierCombo = createCombo(idCarrier)
 	app.blockCombo = createCombo(idBlock)
 	app.fpsCombo = createCombo(idFPS)
 	app.eccCombo = createCombo(idECC)
+	fillCombo(app.carrierCombo, []string{"黑白 QR", "彩色 QR", "声音"}, carrierQR)
 	fillCombo(app.blockCombo, []string{"800", "1200", "1600", "2000", "2300"}, 1)
 	fillCombo(app.fpsCombo, []string{"10 fps", "15 fps", "20 fps", "24 fps", "30 fps"}, 1)
 	fillCombo(app.eccCombo, []string{"L · 快速", "M · 稳定"}, 0)
@@ -464,10 +477,12 @@ func createControls(hwnd uintptr) {
 	app.metricsLabel = createLabel("完全离线 · 与 DataYao Android / 鸿蒙 / Web 接收端兼容", app.font)
 
 	updateMode(modeFile)
+	updateCarrierControls()
 	updateRateLabel()
 }
 
 func fillCombo(combo uintptr, values []string, selected int) {
+	sendMessage(combo, cbResetContent, 0, 0)
 	for _, value := range values {
 		sendMessage(combo, cbAddString, 0, uintptr(unsafe.Pointer(utf16Pointer(value))))
 	}
@@ -475,7 +490,7 @@ func fillCombo(combo uintptr, values []string, selected int) {
 }
 
 func layoutControls(hwnd uintptr) {
-	if len(app.settingLabels) < 5 {
+	if len(app.settingLabels) < 6 {
 		return
 	}
 	client := getClientRectangle(hwnd)
@@ -495,17 +510,18 @@ func layoutControls(hwnd uintptr) {
 	moveWindow(app.drop, margin, px(140), leftWidth, px(118))
 	moveWindow(app.textEdit, margin, px(140), leftWidth, px(118))
 
-	rowY := px(278)
+	rowY := px(270)
 	comboX := margin + px(116)
 	comboWidth := leftWidth - px(116)
-	for index := 0; index < 3; index++ {
+	for index := 0; index < 4; index++ {
 		moveWindow(app.settingLabels[index+1], margin, rowY+int32(index)*px(48), px(108), controlHeight)
 	}
-	moveWindow(app.blockCombo, comboX, rowY, comboWidth, px(220))
-	moveWindow(app.fpsCombo, comboX, rowY+px(48), comboWidth, px(220))
-	moveWindow(app.eccCombo, comboX, rowY+px(96), comboWidth, px(220))
-	moveWindow(app.rateLabel, margin, rowY+px(146), leftWidth, labelHeight)
-	moveWindow(app.startButton, margin, rowY+px(184), leftWidth, px(46))
+	moveWindow(app.carrierCombo, comboX, rowY, comboWidth, px(220))
+	moveWindow(app.blockCombo, comboX, rowY+px(48), comboWidth, px(220))
+	moveWindow(app.fpsCombo, comboX, rowY+px(96), comboWidth, px(220))
+	moveWindow(app.eccCombo, comboX, rowY+px(144), comboWidth, px(220))
+	moveWindow(app.rateLabel, margin, rowY+px(194), leftWidth, labelHeight)
+	moveWindow(app.startButton, margin, rowY+px(228), leftWidth, px(46))
 
 	rightX := margin + leftWidth + gap
 	rightWidth := width - rightX - margin
@@ -519,7 +535,7 @@ func layoutControls(hwnd uintptr) {
 	}
 	moveWindow(app.qrWindow, rightX, qrTop, rightWidth, qrHeight)
 	scaleY := qrTop + qrHeight + px(12)
-	moveWindow(app.settingLabels[4], rightX, scaleY, px(100), controlHeight)
+	moveWindow(app.settingLabels[5], rightX, scaleY, px(100), controlHeight)
 	moveWindow(app.scaleTrack, rightX+px(100), scaleY, rightWidth-px(164), controlHeight)
 	moveWindow(app.scaleValue, rightX+rightWidth-px(58), scaleY, px(58), controlHeight)
 	moveWindow(app.metricsLabel, rightX, scaleY+px(40), rightWidth, labelHeight)
@@ -546,6 +562,15 @@ func handleCommand(id, notification uint16) {
 	case idFull:
 		if notification == bnClicked {
 			openFullscreen()
+		}
+	case idCarrier:
+		if notification == cbnSelChange && !app.running {
+			carrierIndex := int(sendMessage(app.carrierCombo, cbGetCurSel, 0, 0))
+			if carrierIndex >= carrierQR && carrierIndex <= carrierSound {
+				app.carrier = carrierIndex
+			}
+			updateCarrierControls()
+			updateRateLabel()
 		}
 	case idBlock, idFPS, idECC:
 		if notification == cbnSelChange {
@@ -577,13 +602,26 @@ func updateMode(mode int) {
 func readSettings() {
 	blocks := []int{800, 1200, 1600, 2000, 2300}
 	fpsValues := []int{10, 15, 20, 24, 30}
+	carrierIndex := int(sendMessage(app.carrierCombo, cbGetCurSel, 0, 0))
 	blockIndex := int(sendMessage(app.blockCombo, cbGetCurSel, 0, 0))
 	fpsIndex := int(sendMessage(app.fpsCombo, cbGetCurSel, 0, 0))
 	eccIndex := int(sendMessage(app.eccCombo, cbGetCurSel, 0, 0))
+	if carrierIndex >= carrierQR && carrierIndex <= carrierSound {
+		app.carrier = carrierIndex
+	}
+	if app.carrier == carrierSound {
+		blocks = []int{64, 96, 128}
+	}
 	if blockIndex >= 0 && blockIndex < len(blocks) {
 		app.blockSize = blocks[blockIndex]
 	}
-	if fpsIndex >= 0 && fpsIndex < len(fpsValues) {
+	if app.carrier == carrierSound {
+		if fpsIndex == 1 {
+			app.audioProfile = audioFast
+		} else {
+			app.audioProfile = audioStable
+		}
+	} else if fpsIndex >= 0 && fpsIndex < len(fpsValues) {
 		app.fps = fpsValues[fpsIndex]
 	}
 	if eccIndex == 1 {
@@ -593,8 +631,47 @@ func readSettings() {
 	}
 }
 
+func updateCarrierControls() {
+	if app.carrier == carrierSound {
+		app.blockSize = 64
+		app.audioProfile = audioStable
+		fillCombo(app.blockCombo, []string{"64", "96", "128"}, 0)
+		setWindowText(app.settingLabels[3], "声音速度")
+		setWindowText(app.settingLabels[4], "音频校验")
+		fillCombo(app.fpsCombo, []string{"稳定", "快速"}, 0)
+		fillCombo(app.eccCombo, []string{"CRC32"}, 0)
+		enableWindow(app.fpsCombo, true)
+		enableWindow(app.eccCombo, false)
+		enableWindow(app.fullButton, false)
+		enableWindow(app.scaleTrack, false)
+	} else {
+		app.blockSize = 1200
+		app.fps = 15
+		fillCombo(app.blockCombo, []string{"800", "1200", "1600", "2000", "2300"}, 1)
+		setWindowText(app.settingLabels[3], "播放帧率")
+		setWindowText(app.settingLabels[4], "二维码纠错")
+		fillCombo(app.fpsCombo, []string{"10 fps", "15 fps", "20 fps", "24 fps", "30 fps"}, 1)
+		fillCombo(app.eccCombo, []string{"L · 快速", "M · 稳定"}, 0)
+		enableWindow(app.fpsCombo, true)
+		enableWindow(app.eccCombo, true)
+		enableWindow(app.fullButton, true)
+		enableWindow(app.scaleTrack, true)
+	}
+	invalidateWindow(app.drop)
+}
+
 func updateRateLabel() {
-	rate := float64(app.blockSize*app.fps) / 1.2 / 1024
+	if app.carrier == carrierSound {
+		duration := float64(audioFrameDurationMs(24+app.blockSize, app.audioProfile)) / 1000
+		rate := float64(app.blockSize) / 1.2 / duration
+		setWindowText(app.rateLabel, fmt.Sprintf("预计有效速度 %.0f B/s", rate))
+		return
+	}
+	channels := 1.0
+	if app.carrier == carrierColor {
+		channels = 3
+	}
+	rate := float64(app.blockSize*app.fps) * channels / 1.2 / 1024
 	setWindowText(app.rateLabel, fmt.Sprintf("预计有效速度 %.0f KB/s", rate))
 }
 
@@ -655,6 +732,10 @@ func startTransfer() {
 		mimeType = "text/plain;charset=utf-8"
 		isText = true
 	}
+	if app.carrier == carrierSound && len(data) > 64*1024 {
+		showTransferError("声音模式仅适合短数据", "声音传输速度约为每秒 8–12 字节，请将内容控制在 64 KB 内；较大文件请使用黑白或彩色二维码。")
+		return
+	}
 
 	payload, err := packTransfer(name, mimeType, data, isText)
 	if err != nil {
@@ -677,12 +758,19 @@ func startTransfer() {
 		showTransferError("二维码参数不兼容", fmt.Sprintf("每帧 %d 字节、纠错 %s 无法生成二维码：%v。请降低每帧字节或切换纠错级别。", app.blockSize, eccName(), err))
 		return
 	}
-	app.sequence++
+	if app.carrier == carrierColor {
+		app.sequence += 3
+	} else {
+		app.sequence++
+	}
 	app.running = true
 	setTransferControlsEnabled(false)
 	setWindowText(app.startButton, "停止发送")
 	invalidateWindow(app.startButton)
 	interval := 1000 / app.fps
+	if app.carrier == carrierSound {
+		interval = audioFrameDurationMs(24+app.blockSize, app.audioProfile)
+	}
 	procSetTimer.Call(app.main, frameTimerID, uintptr(interval), 0)
 	updateTransferStatus()
 }
@@ -696,7 +784,11 @@ func tickTransfer() {
 		showTransferError("二维码生成失败", fmt.Sprintf("序列 %d：%v", app.sequence, err))
 		return
 	}
-	app.sequence++
+	if app.carrier == carrierColor {
+		app.sequence += 3
+	} else {
+		app.sequence++
+	}
 	if app.sequence%5 == 0 {
 		updateTransferStatus()
 	}
@@ -705,29 +797,66 @@ func tickTransfer() {
 func renderFrame(sequence uint32) error {
 	header := app.header
 	header.sequence = sequence
-	frame, err := packFrame(header, app.encoder.encode(sequence))
-	if err != nil {
-		return err
+	if app.carrier == carrierSound {
+		frame, err := packFrame(header, app.encoder.encode(sequence))
+		if err != nil {
+			return err
+		}
+		app.audioWav = encodeAudioWAV(frame, app.audioProfile)
+		playAudioWAV(app.audioWav)
+		app.qrPixels = nil
+		app.qrModules = 0
+		app.qrVersion = 0
+		invalidateWindow(app.qrWindow)
+		return nil
 	}
-	code, err := qrcode.New(string(frame), app.ecc)
-	if err != nil {
-		return err
+	count := 1
+	if app.carrier == carrierColor {
+		count = 3
 	}
-	bitmap := code.Bitmap()
-	size := len(bitmap)
+	frames := make([][]byte, count)
+	for index := 0; index < count; index++ {
+		frame, err := packFrame(frameHeader{flags: app.header.flags, sessionID: app.header.sessionID, sequence: sequence + uint32(index), blockCount: app.header.blockCount, blockSize: app.header.blockSize, totalLength: app.header.totalLength, payloadCRC: app.header.payloadCRC}, app.encoder.encode(sequence+uint32(index)))
+		if err != nil {
+			return err
+		}
+		frames[index] = frame
+	}
+	codes := make([][][]bool, count)
+	size := 0
+	version := 0
+	for index, frame := range frames {
+		code, err := qrcode.New(string(frame), app.ecc)
+		if err != nil {
+			return err
+		}
+		codes[index] = code.Bitmap()
+		if index == 0 {
+			size = len(codes[index])
+			version = code.VersionNumber
+		} else if len(codes[index]) != size {
+			return fmt.Errorf("彩色二维码通道版本不一致")
+		}
+	}
 	pixels := make([]uint32, size*size)
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
-			if bitmap[y][x] {
-				pixels[y*size+x] = 0x00071018
-			} else {
-				pixels[y*size+x] = 0x00ffffff
+			red, green, blue := byte(240), byte(240), byte(240)
+			if codes[0][y][x] {
+				red = 16
 			}
+			if count > 1 && codes[1][y][x] {
+				green = 16
+			}
+			if count > 2 && codes[2][y][x] {
+				blue = 16
+			}
+			pixels[y*size+x] = uint32(blue) | uint32(green)<<8 | uint32(red)<<16
 		}
 	}
 	app.qrPixels = pixels
 	app.qrModules = size
-	app.qrVersion = code.VersionNumber
+	app.qrVersion = version
 	invalidateWindow(app.qrWindow)
 	if app.fullWindow != 0 {
 		invalidateWindow(app.fullWindow)
@@ -739,6 +868,7 @@ func stopTransfer(showStopped bool) {
 	if app.main != 0 {
 		procKillTimer.Call(app.main, frameTimerID)
 	}
+	stopAudio()
 	wasRunning := app.running
 	app.running = false
 	app.encoder = nil
@@ -746,9 +876,11 @@ func stopTransfer(showStopped bool) {
 	app.qrPixels = nil
 	app.qrModules = 0
 	app.qrVersion = 0
+	app.audioWav = nil
 	if app.startButton != 0 {
 		setWindowText(app.startButton, "开始发送")
 		setTransferControlsEnabled(true)
+		updateCarrierControls()
 		invalidateWindow(app.startButton)
 	}
 	if showStopped && wasRunning {
@@ -760,15 +892,32 @@ func stopTransfer(showStopped bool) {
 	}
 }
 
+func playAudioWAV(wav []byte) {
+	if len(wav) == 0 {
+		return
+	}
+	procPlaySoundW.Call(uintptr(unsafe.Pointer(&wav[0])), sndMemory|sndAsync)
+}
+
+func stopAudio() {
+	procPlaySoundW.Call(0, sndPurge)
+}
+
 func setTransferControlsEnabled(enabled bool) {
-	controls := []uintptr{app.modeFileButton, app.modeTextButton, app.drop, app.textEdit, app.blockCombo, app.fpsCombo, app.eccCombo}
+	controls := []uintptr{app.modeFileButton, app.modeTextButton, app.drop, app.textEdit, app.carrierCombo, app.blockCombo, app.fpsCombo, app.eccCombo}
 	for _, control := range controls {
 		enableWindow(control, enabled)
 	}
 }
 
 func updateTransferStatus() {
-	setStatus(fmt.Sprintf("正在发送 · 帧 %s · QR V%d-%s", formatUint(uint64(app.sequence)), app.qrVersion, eccName()), false)
+	carrierStatus := fmt.Sprintf("QR V%d-%s", app.qrVersion, eccName())
+	if app.carrier == carrierColor {
+		carrierStatus = fmt.Sprintf("彩色 QR V%d-%s · 3 通道", app.qrVersion, eccName())
+	} else if app.carrier == carrierSound {
+		carrierStatus = "声音 DTMF"
+	}
+	setStatus(fmt.Sprintf("正在发送 · 帧 %s · %s", formatUint(uint64(app.sequence)), carrierStatus), false)
 	if app.payload != nil {
 		name := app.payload.fileName
 		setWindowText(app.metricsLabel, fmt.Sprintf("%s · %s → %s · %s 个源块", name, formatBytes(int64(app.payload.originalLen)), formatBytes(int64(len(app.payload.container))), formatUint(uint64(len(app.encoder.blocks)))))
@@ -1011,8 +1160,12 @@ func paintQRWindow(hwnd uintptr) {
 		drawText(hdc, "DataYao", &brand, dtCenter|dtVCenter|dtSingleLine|dtNoPrefix)
 		procSelectObject.Call(hdc, app.font)
 		procSetTextColor.Call(hdc, rgb(105, 111, 121))
+		stateText := "等待开始"
+		if app.running && app.carrier == carrierSound {
+			stateText = "正在播放 DataYao 声音"
+		}
 		state := rect{left: 0, top: brand.bottom, right: width, bottom: brand.bottom + px(34)}
-		drawText(hdc, "等待开始", &state, dtCenter|dtVCenter|dtSingleLine|dtNoPrefix)
+		drawText(hdc, stateText, &state, dtCenter|dtVCenter|dtSingleLine|dtNoPrefix)
 		return
 	}
 	available := width
@@ -1081,6 +1234,9 @@ func paintDropWindow(hwnd uintptr) {
 	procSetTextColor.Call(hdc, rgb(34, 37, 43))
 	mainText := "选择文件或拖入此区域"
 	subText := "最大 64 MB"
+	if app.carrier == carrierSound {
+		subText = "最大 64 KB"
+	}
 	if app.filePath != "" {
 		mainText = filepath.Base(app.filePath)
 		subText = formatBytes(app.fileSize)

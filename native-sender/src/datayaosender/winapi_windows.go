@@ -189,9 +189,10 @@ const (
 
 	emSetLimitText = 0x00c5
 
-	cbAddString = 0x0143
-	cbGetCurSel = 0x0147
-	cbSetCurSel = 0x014e
+	cbAddString    = 0x0143
+	cbResetContent = 0x014b
+	cbGetCurSel    = 0x0147
+	cbSetCurSel    = 0x014e
 
 	tbmGetPos     = wmUser
 	tbmSetPos     = wmUser + 5
@@ -242,6 +243,10 @@ const (
 	iccBarClasses = 0x00000004
 
 	vkEscape = 0x1b
+
+	sndMemory = 0x0004
+	sndAsync  = 0x0001
+	sndPurge  = 0x0040
 )
 
 var (
@@ -251,6 +256,7 @@ var (
 	shell32  = syscall.NewLazyDLL("shell32.dll")
 	comdlg32 = syscall.NewLazyDLL("comdlg32.dll")
 	comctl32 = syscall.NewLazyDLL("comctl32.dll")
+	winmm    = syscall.NewLazyDLL("winmm.dll")
 
 	procRegisterClassExW     = user32.NewProc("RegisterClassExW")
 	procCreateWindowExW      = user32.NewProc("CreateWindowExW")
@@ -313,6 +319,7 @@ var (
 
 	procGetOpenFileNameW     = comdlg32.NewProc("GetOpenFileNameW")
 	procInitCommonControlsEx = comctl32.NewProc("InitCommonControlsEx")
+	procPlaySoundW           = winmm.NewProc("PlaySoundW")
 )
 
 func rgb(red, green, blue byte) uintptr {

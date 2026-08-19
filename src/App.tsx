@@ -85,8 +85,8 @@ export function App() {
       </main>
 
       <footer>
-        <span>DataYao v0.2.5</span>
-        <span>标准 QR · LT Fountain · SHA-256</span>
+        <span>DataYao v0.3.0</span>
+        <span>QR · 彩色 QR · 声音 · LT Fountain</span>
       </footer>
     </div>
   );

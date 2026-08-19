@@ -76,6 +76,10 @@ class DataYaoBridge {
     void this.requestCameraPermissionAsync();
   }
 
+  requestMicrophonePermission(): void {
+    void this.requestMicrophonePermissionAsync();
+  }
+
   private async requestCameraPermissionAsync(): Promise<void> {
     if (!this.context) {
       this.emit('datayao-harmony-camera-permission', cameraPermissionDetail(false, '鸿蒙运行环境未就绪'));
@@ -93,6 +97,26 @@ class DataYaoBridge {
     } catch (error) {
       hilog.error(LOG_DOMAIN, LOG_TAG, 'Camera permission request failed: %{public}s', errorMessage(error as Object));
       this.emit('datayao-harmony-camera-permission', cameraPermissionDetail(false, '摄像头权限请求失败'));
+    }
+  }
+
+  private async requestMicrophonePermissionAsync(): Promise<void> {
+    if (!this.context) {
+      this.emit('datayao-harmony-microphone-permission', cameraPermissionDetail(false, '鸿蒙运行环境未就绪'));
+      return;
+    }
+    try {
+      const permissions: Permissions[] = ['ohos.permission.MICROPHONE'];
+      const manager = abilityAccessCtrl.createAtManager();
+      const result = await manager.requestPermissionsFromUser(this.context, permissions);
+      const granted = result.authResults.length > 0 && result.authResults[0] === 0;
+      this.emit(
+        'datayao-harmony-microphone-permission',
+        cameraPermissionDetail(granted, granted ? '' : '麦克风权限未授予')
+      );
+    } catch (error) {
+      hilog.error(LOG_DOMAIN, LOG_TAG, 'Microphone permission request failed: %{public}s', errorMessage(error as Object));
+      this.emit('datayao-harmony-microphone-permission', cameraPermissionDetail(false, '麦克风权限请求失败'));
     }
   }
 
@@ -257,8 +281,11 @@ struct Index {
         .domStorageAccess(true)
         .onPermissionRequest((event) => {
           const resources = event.request.getAccessibleResource();
-          if (resources.indexOf('TYPE_VIDEO_CAPTURE') >= 0) {
-            event.request.grant(['TYPE_VIDEO_CAPTURE']);
+          const granted: string[] = [];
+          if (resources.indexOf('TYPE_VIDEO_CAPTURE') >= 0) granted.push('TYPE_VIDEO_CAPTURE');
+          if (resources.indexOf('TYPE_AUDIO_CAPTURE') >= 0) granted.push('TYPE_AUDIO_CAPTURE');
+          if (granted.length > 0) {
+            event.request.grant(granted);
           } else {
             event.request.deny();
           }
@@ -272,7 +299,7 @@ struct Index {
         .javaScriptProxy({
           object: this.bridge,
           name: 'DataYaoHarmony',
-          methodList: ['requestCameraPermission', 'copyText', 'saveFileStart', 'saveFileChunk', 'saveFileFinish'],
+          methodList: ['requestCameraPermission', 'requestMicrophonePermission', 'copyText', 'saveFileStart', 'saveFileChunk', 'saveFileFinish'],
           controller: this.controller
         })
         .width('100%')

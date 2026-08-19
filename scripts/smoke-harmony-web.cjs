@@ -41,12 +41,14 @@ async function main() {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Unable to start the smoke-test server.");
 
-  const chromePath = process.env.CHROME_PATH || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+  // Prefer Playwright's pinned browser for deterministic smoke tests. An external
+  // browser is opt-in because system Chrome builds can exit while fake media is active.
+  const chromePath = process.env.CHROME_PATH;
   const launchOptions = {
     headless: true,
     args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
   };
-  if (fs.existsSync(chromePath)) launchOptions.executablePath = chromePath;
+  if (chromePath && fs.existsSync(chromePath)) launchOptions.executablePath = chromePath;
   const browser = await chromium.launch(launchOptions);
   try {
     console.log(`Smoke server: http://127.0.0.1:${address.port}/`);
