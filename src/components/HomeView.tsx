@@ -24,14 +24,14 @@ const downloads = [
     icon: Monitor,
     title: "Windows XP / 7",
     detail: "原生 x86 收发端 · 约 1.0 MB · 解压即用",
-    href: `${RELEASE_BASE}/DataYao-0.3.0-Windows-XP-Win7-x86-Portable.zip`,
+    href: `${RELEASE_BASE}/DataYao-0.4.0-Windows-XP-Win7-x86-Portable.zip`,
     action: "下载 Legacy",
   },
   {
     icon: Monitor,
     title: "Windows 10 / 11",
     detail: "原生 x64 收发端 · 约 1.3 MB · 无 WebView2",
-    href: `${RELEASE_BASE}/DataYao-0.3.0-Windows-Win10-Win11-x64-Portable.zip`,
+    href: `${RELEASE_BASE}/DataYao-0.4.0-Windows-Win10-Win11-x64-Portable.zip`,
     action: "下载 Modern",
   },
   {
@@ -45,7 +45,7 @@ const downloads = [
     icon: Smartphone,
     title: "HarmonyOS 接收端",
     detail: "未签名开发验证包 · Stage 工程",
-    href: `${RELEASE_BASE}/DataYao-0.3.0-HarmonyOS-unsigned.zip`,
+    href: `${RELEASE_BASE}/DataYao-0.4.0-HarmonyOS-unsigned.zip`,
     action: "下载鸿蒙包",
   },
 ] as const;

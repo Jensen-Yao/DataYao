@@ -45,11 +45,11 @@ Web 版首次加载后会缓存为 PWA，后续可离线运行。浏览器接收
 
 | 平台 | 下载 | 说明 |
 | :--- | :--- | :--- |
-| Windows XP / 7 收发端 | [Legacy x86 ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.3.0/DataYao-0.3.0-Windows-XP-Win7-x86-Portable.zip) | 原生 32 位，约 1.0 MB，解压即用，发送 + 摄像头接收黑白 QR |
-| Windows 10 / 11 收发端 | [Modern x64 ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.3.0/DataYao-0.3.0-Windows-Win10-Win11-x64-Portable.zip) | 原生 64 位，约 1.3 MB，解压即用，发送 + 摄像头接收黑白 QR，不依赖 WebView2 |
+| Windows XP / 7 收发端 | [Legacy x86 ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.4.0/DataYao-0.4.0-Windows-XP-Win7-x86-Portable.zip) | 原生 32 位，约 1.0 MB，解压即用，发送 + 摄像头接收黑白 QR |
+| Windows 10 / 11 收发端 | [Modern x64 ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.4.0/DataYao-0.4.0-Windows-Win10-Win11-x64-Portable.zip) | 原生 64 位，约 1.3 MB，解压即用，发送 + 摄像头接收黑白 QR，不依赖 WebView2 |
 | 单文件 HTML 发送端 | 本地构建 `DataYao-Sender-0.4.0.html` | 约 240 KB，现代浏览器可直接双击离线运行；仅标准动态 QR |
-| Android 接收端 | [Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.3.0/DataYao-Receiver-release.apk) | GitHub Actions 签名，仅接收模式，支持摄像头与麦克风 |
-| HarmonyOS 接收端 | [HarmonyOS ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.3.0/DataYao-0.3.0-HarmonyOS-unsigned.zip) | 未签名开发验证包，需自行签名后上架 |
+| Android 接收端 | [Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.4.0/DataYao-Receiver-release.apk) | GitHub Actions 签名，仅接收模式，支持摄像头与麦克风 |
+| HarmonyOS 接收端 | [HarmonyOS ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.4.0/DataYao-0.4.0-HarmonyOS-unsigned.zip) | 未签名开发验证包，需自行签名后上架 |
 | Web / PWA | [GitHub Pages](https://jensen-yao.github.io/DataYao/) | 浏览器直接打开，可安装为 PWA |
 
 > 完整发布列表见 [Releases](https://github.com/Jensen-Yao/DataYao/releases)。
