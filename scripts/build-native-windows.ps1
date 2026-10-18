@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$LegacyGo = "",
   [string]$ModernGo = "",
   [switch]$RegenerateIcons
@@ -75,7 +75,14 @@ function Write-Package([string]$archiveName, [string]$folderName, [string]$exePa
   New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
   Copy-Item -LiteralPath $exePath -Destination (Join-Path $packageDir "DataYao.exe")
   Copy-Item -LiteralPath (Join-Path $root "LICENSE") -Destination (Join-Path $packageDir "LICENSE.txt")
-  Copy-Item -LiteralPath (Join-Path $root "native-sender\third_party\go-qrcode-LICENSE.txt") -Destination (Join-Path $packageDir "THIRD-PARTY-LICENSES.txt")
+  $licenseFiles = @(
+    (Join-Path $root "native-sender\third_party\go-qrcode-LICENSE.txt"),
+    (Join-Path $root "native-sender\third_party\gozxing-LICENSE.txt")
+  )
+  $licenseText = ($licenseFiles | ForEach-Object {
+    "===== $([IO.Path]::GetFileName($_)) =====`r`n`r`n" + (Get-Content -LiteralPath $_ -Raw)
+  }) -join "`r`n"
+  [IO.File]::WriteAllText((Join-Path $packageDir "THIRD-PARTY-LICENSES.txt"), $licenseText, (New-Object Text.UTF8Encoding($true)))
   $readme = Get-Content -LiteralPath (Join-Path $root "native-sender\README.md") -Raw -Encoding UTF8
   [IO.File]::WriteAllText((Join-Path $packageDir "README.txt"), $readme, (New-Object Text.UTF8Encoding($true)))
   Compress-Archive -Path $packageDir -DestinationPath $archivePath -CompressionLevel Optimal
@@ -97,8 +104,8 @@ $modernGoExe = Resolve-GoExecutable $ModernGo @(
   (Join-Path $root "artifacts\toolchains\go1.26.5-amd64\go\bin\go.exe")
 )
 
-$legacyExe = Join-Path $outputRoot "DataYao-Sender-XP-Win7-x86.exe"
-$modernExe = Join-Path $outputRoot "DataYao-Sender-Win10-Win11-x64.exe"
+$legacyExe = Join-Path $outputRoot "DataYao-XP-Win7-x86.exe"
+$modernExe = Join-Path $outputRoot "DataYao-Win10-Win11-x64.exe"
 $env:GOPATH = $gopath
 $env:GO111MODULE = "off"
 $env:GOOS = "windows"
@@ -140,8 +147,8 @@ foreach ($exe in @($legacyExe, $modernExe)) {
   Remove-Item -LiteralPath $selfTest -Force
 }
 
-$legacyZip = Write-Package "DataYao-$version-Windows-XP-Win7-x86-Portable.zip" "DataYao-Sender-XP-Win7-x86" $legacyExe
-$modernZip = Write-Package "DataYao-$version-Windows-Win10-Win11-x64-Portable.zip" "DataYao-Sender-Win10-Win11-x64" $modernExe
+$legacyZip = Write-Package "DataYao-$version-Windows-XP-Win7-x86-Portable.zip" "DataYao-XP-Win7-x86" $legacyExe
+$modernZip = Write-Package "DataYao-$version-Windows-Win10-Win11-x64-Portable.zip" "DataYao-Win10-Win11-x64" $modernExe
 
 $checksumTargets = @($legacyZip, $modernZip)
 $checksumLines = foreach ($item in $checksumTargets) {

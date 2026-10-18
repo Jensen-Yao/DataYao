@@ -4,7 +4,7 @@ import { AudioFrameDecoder } from "../core/audio";
 import { crc32 } from "../core/checksum";
 import { LTDecoder } from "../core/fountain";
 import { parseFrame, streamKey, unpackTransfer, type TransferResult } from "../core/protocol";
-import { QrDecodePool, type QrCarrierMode } from "../core/qrDecodePool";
+import { QrDecodePool, preferredDecodeWorkerCount, type QrCarrierMode } from "../core/qrDecodePool";
 
 interface ReceiveStats {
   validFrames: number;
@@ -190,7 +190,7 @@ export function ReceiverView() {
     let videoFrameHandle = 0;
     const scanContext = scanCanvasRef.current?.getContext("2d", { willReadFrequently: true }) ?? null;
     const pool = new QrDecodePool(
-      2,
+      preferredDecodeWorkerCount(),
       carrier,
       (bytes) => {
         if (cancelled || completedRef.current) return;
@@ -226,10 +226,6 @@ export function ReceiverView() {
       const canvas = scanCanvasRef.current;
       if (video && canvas && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
         capturedFramesRef.current += 1;
-        if (pool.busyCount >= pool.size) {
-          droppedFramesRef.current += 1;
-          return;
-        }
         const scanWidth = video.videoWidth;
         const scanHeight = video.videoHeight;
         if (canvas.width !== scanWidth || canvas.height !== scanHeight) {
@@ -239,6 +235,8 @@ export function ReceiverView() {
         if (scanContext) {
           scanContext.drawImage(video, 0, 0, scanWidth, scanHeight);
           const image = scanContext.getImageData(0, 0, scanWidth, scanHeight);
+          // submit() parks the freshest frame when every worker is busy, so
+          // false here only means an older queued frame got replaced.
           if (!pool.submit(image)) droppedFramesRef.current += 1;
         }
       }

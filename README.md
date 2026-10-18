@@ -45,8 +45,9 @@ Web 版首次加载后会缓存为 PWA，后续可离线运行。浏览器接收
 
 | 平台 | 下载 | 说明 |
 | :--- | :--- | :--- |
-| Windows XP / 7 发送端 | [Legacy x86 ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.3.0/DataYao-0.3.0-Windows-XP-Win7-x86-Portable.zip) | 原生 32 位，约 815 KB，解压即用，不依赖运行库 |
-| Windows 10 / 11 发送端 | [Modern x64 ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.3.0/DataYao-0.3.0-Windows-Win10-Win11-x64-Portable.zip) | 原生 64 位，约 1.12 MB，解压即用，不依赖 WebView2 |
+| Windows XP / 7 收发端 | [Legacy x86 ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.3.0/DataYao-0.3.0-Windows-XP-Win7-x86-Portable.zip) | 原生 32 位，约 1.0 MB，解压即用，发送 + 摄像头接收黑白 QR |
+| Windows 10 / 11 收发端 | [Modern x64 ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.3.0/DataYao-0.3.0-Windows-Win10-Win11-x64-Portable.zip) | 原生 64 位，约 1.3 MB，解压即用，发送 + 摄像头接收黑白 QR，不依赖 WebView2 |
+| 单文件 HTML 发送端 | 本地构建 `DataYao-Sender-0.4.0.html` | 约 240 KB，现代浏览器可直接双击离线运行；仅标准动态 QR |
 | Android 接收端 | [Receiver APK](https://github.com/Jensen-Yao/DataYao/releases/download/v0.3.0/DataYao-Receiver-release.apk) | GitHub Actions 签名，仅接收模式，支持摄像头与麦克风 |
 | HarmonyOS 接收端 | [HarmonyOS ZIP](https://github.com/Jensen-Yao/DataYao/releases/download/v0.3.0/DataYao-0.3.0-HarmonyOS-unsigned.zip) | 未签名开发验证包，需自行签名后上架 |
 | Web / PWA | [GitHub Pages](https://jensen-yao.github.io/DataYao/) | 浏览器直接打开，可安装为 PWA |
@@ -57,9 +58,9 @@ Web 版首次加载后会缓存为 PWA，后续可离线运行。浏览器接收
 
 - **双端离线**：页面首次加载后由 Service Worker 缓存；光学传输阶段没有网络请求。
 - **抗丢帧**：LT fountain code 允许帧乱序、丢失和重复，接收端收到足够独立方程即可恢复。
-- **实时解码**：两个独立 Web Worker 使用 ZXing-C++ WASM 分析原始摄像头帧；解码繁忙时丢弃旧帧，不阻塞界面或积压延迟。
+- **实时解码**：ZXing-C++ WASM 解码线程池按 CPU 逻辑核心自动扩展（2–6 个 Worker）分析原始摄像头帧；解码繁忙时保留最新画面，不阻塞界面或积压延迟。
 - **完整性校验**：每个 QR 帧带 CRC32，完整容器恢复后再做 SHA-256 校验。
-- **文件与文本**：保留文件名和 MIME 类型；可选 gzip 压缩，文本支持直接复制。
+- **文件与文本**：保留文件名和 MIME 类型；可选 gzip 压缩（异步多线程执行，大文件不冻结界面），文本支持直接复制。
 - **可调参数**：每帧字节数、播放帧率和 QR 纠错等级可按屏幕、距离和相机能力调节。
 - **便携操作**：发送端支持把文件直接拖入文件区；二维码显示尺寸可用滑块缩小，方便调整拍摄距离。
 - **三种离线载波**：标准 QR 保持默认稳定路径；彩色 QR 每幅图并行承载三帧；声音模式用于 64 KB 内短数据兜底。
@@ -82,7 +83,19 @@ Windows 发送端采用同一套 Go/Win32 源码生成两个小型版本，解�
 - **Legacy x86**：使用 Go 1.10.8 和 `GO386=387` 构建，目标为 Windows XP SP3 / Windows 7 及其他 32 位老机器。
 - **Modern x64**：使用 Go 1.26.5 x64 构建，目标为 Windows 10 / 11。
 
-两者生成完全相同的 DataYao 协议帧，可由现有 Android、HarmonyOS 和 Web 接收端直接扫描。Windows 包只承担发送，因此接收端仍仅依赖手机摄像头，不需要与发送电脑联网。
+两者生成完全相同的 DataYao 协议帧，可由现有 Android、HarmonyOS 和 Web 接收端直接扫描。从 v0.4.0 起 Windows 包同时内置**原生接收端**：主窗口点“打开接收端”，通过 avicap32 摄像头采集与纯 Go ZXing 解码器（gozxing，已剥离 x/text/xerrors 依赖以控制体积）恢复黑白 QR 传输，支持多线程解码、忙时保留最新帧、文本复制到剪贴板和系统保存对话框。Windows 对 Windows 的完全离线传输不再需要手机或浏览器；彩色 QR 与声音的接收仍使用手机或 Web 接收端。
+
+### 单文件 HTML 发送端
+
+`DataYao-Sender-0.4.0.html` 是可直接分发的单一 HTML 文件。它内嵌全部 JavaScript 与 CSS，无需安装、网络、PWA 缓存或同目录资源；在 Chrome、Edge、Firefox 等现代浏览器中直接双击打开即可使用。该版本只保留标准黑白动态二维码，以缩小体积并保持最稳定的光学链路；支持文件拖放、文本、二维码缩放、全屏、帧率、每帧字节和纠错等级设置。
+
+本地生成：
+
+```powershell
+npm.cmd run build:sender-html
+```
+
+产物位于 `artifacts/html/DataYao-Sender-0.4.0.html`。它不支持 Windows XP 自带 IE，因此 XP/Win7 仍应使用原生便携发送端。
 
 本地生成：
 
@@ -98,7 +111,7 @@ npm run package:native
 
 Android 工程使用 Capacitor，构建时设置 `VITE_RECEIVER_ONLY=1`，启动后直接进入接收页并隐藏发送入口。QR 模式申请摄像头权限，声音模式申请麦克风权限。仓库的 `.github/workflows/android.yml` 会在 GitHub Actions 中安装 Android SDK、构建 release APK、使用 GitHub Actions Secrets 中的 JKS 发布密钥签名，生成 provenance，并在标签构建后上传到对应 GitHub Release。
 
-APK 最低支持 Android 7.0（API 24）。QR 扫描建议使用支持连续自动对焦、至少能输出 720p 画面的后置摄像头；声音接收建议让手机靠近发送端扬声器。保存文件时调用 Android 系统文件选择器，不需要存储权限。接收过程在内存中恢复文件，接近 64 MB QR 上限时需要为应用保留足够可用内存。
+APK 最低支持 Android 7.0（API 24）。QR 扫描建议使用支持连续自动对焦、至少能输出 720p 画面的后置摄像头；声音接收建议让手机靠近发送端扬声器。保存文件时调用 Android 系统文件选择器，不需要存储权限。接收过程在内存中恢复文件，大文件（建议手机端不超过 128 MB）时需要为应用保留足够可用内存。
 
 需要配置的仓库 Secrets：
 
@@ -138,9 +151,9 @@ npm.cmd run build:harmony
 默认参数为 **1200 bytes/frame、15 fps、ECC-L**，优先保证手机摄像头的实拍识别率。
 
 - 识别困难、距离较远或屏幕较小：降低每帧字节数到 800/1200，帧率降到 10/15，纠错改为 M。
-- 光线充足、设备性能较好：可尝试 2000/2300 bytes 和 24/30 fps。
+- 光线充足、设备性能较好：可尝试 2000/2300 bytes 和 24/30 fps；ECC-L 下还提供 2920 bytes 的极限档（QR V40-L 满 capacity，码点非常密，仅在近距离、高分辨率相机上尝试）。
 - 保持二维码四周留白，避免浏览器缩放、系统护眼滤镜和屏幕反光。
-- 接收页会请求连续自动对焦，并显示采集、分析、二维码、有效帧和忙时丢帧计数，便于判断参数是否合适。
+- 接收页会请求连续自动对焦，并显示采集、分析、二维码、有效帧和解码线程数（2–6，随 CPU 核心扩展），便于判断参数是否合适。
 
 彩色 QR 每幅图叠加三张相同尺寸的 QR 矩阵，理论有效速率约为标准 QR 的三倍，但更依赖屏幕色彩、相机白平衡和对焦。出现识别波动时应先切回标准 QR；关闭护眼、夜间色温和高对比度滤镜。
 
@@ -158,7 +171,7 @@ npm.cmd run build:harmony
 
 每个 DataYao 帧由固定头和一个 fountain block 组成。标准 QR 一图一帧；彩色 QR 把连续三帧分别写入 R/G/B 通道；声音模式给同一 DataYao 帧再增加长度与 CRC32 声音封装。头部包含 magic/version、会话 ID、序号、块数、块大小、总长度、CRC32 和 flags。接收端最终都进入同一 LT Fountain 解码器，因此不依赖帧顺序，也不需要建立双向连接。
 
-文件容器保存文件名、MIME、原始长度、压缩标记和 SHA-256。当前单次传输限制为 **64 MB**；文本输入限制为 **4 MiB**。这是完整性校验，不是加密：传输内容可被看到，也不会隐藏元数据。
+文件容器保存文件名、MIME、原始长度、压缩标记和 SHA-256。当前单次传输限制为 **256 MB**（建议手机接收端控制在 128 MB 内，接收全程在内存中恢复）；文本输入限制为 **4 MiB**。源块数超过 65,535 时帧头自动升级为 v2 布局（u32 blockCount），旧接收端仍可正常解析 v1 帧。这是完整性校验，不是加密：传输内容可被看到，也不会隐藏元数据。
 
 ## 本地开发
 
@@ -207,6 +220,7 @@ public/          PWA 静态资源和品牌 Logo 副本
 
 ## 更新日志
 
+- **v0.4.0**：传输上限提升到 256 MB（协议 v2 帧头，u32 blockCount，向后兼容 v1）；接收端解码线程池按 CPU 核心扩展（2–6 Worker）并在全忙时保留最新帧；发送端 LT 编码、CRC 与二维码矩阵生成移入独立渲染 Worker，渲染改为 ImageData 一次绘制；gzip 改为异步多线程；ECC-L 新增 2920 B/帧极限档；两个 Windows 原生便携包内置黑白 QR 摄像头接收端（avicap32 + 纯 Go ZXing，体积仅增约 20%），成为收发双端；界面完成一轮设计系统升级（渐变主按钮、玻璃顶栏、统一圆角与阴影令牌、标题渐变文字、指标表格数字、精炼微交互）。
 - **v0.3.0**：新增三通道彩色 QR 与轻量 DTMF 声音模式；Web、Android、HarmonyOS 接收三种载波，两个原生 Windows 发送端保持小体积；补充麦克风权限、声音 CRC32、跨通道测试和动态限制提示。
 - **v0.2.5**：新增约 2 MB 的 XP/Win7 x86 与约 3 MB 的 Win10/11 x64 原生便携发送端；补全 Windows、Android、HarmonyOS 统一品牌图标，并支持从 `logo/logo.jpg` 一键生成。
 - **v0.2.4**：更换产品 Logo；更新 PWA 图标与 favicon；同步 Windows、Android、HarmonyOS 版本号。

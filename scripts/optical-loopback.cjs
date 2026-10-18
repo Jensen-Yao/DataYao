@@ -59,7 +59,10 @@ async function createCameraFrame(baseUrl, carrier, text) {
     await page.locator("canvas").waitFor();
     await page.waitForFunction(() => {
       const canvas = document.querySelector("canvas");
-      return canvas instanceof HTMLCanvasElement && canvas.width > 0;
+      // A painted DataYao canvas is at least 480px wide; the untouched
+      // default canvas is 300px. The render worker produces frames
+      // asynchronously, so the first paint may lag the start button.
+      return canvas instanceof HTMLCanvasElement && canvas.width >= 480;
     });
 
     return await page.locator("canvas").screenshot();

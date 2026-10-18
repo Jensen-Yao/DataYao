@@ -1,8 +1,9 @@
-DataYao Native Sender
-=====================
+DataYao Native for Windows
+==========================
 
-This package is the sender-only, fully offline Windows edition of DataYao.
-It does not need installation, Node.js, .NET, WebView2, a browser, or network access.
+This package is the fully offline Windows edition of DataYao: it sends AND
+receives through the camera, without installation, Node.js, .NET, WebView2,
+a browser, or network access.
 
 Packages
 --------
@@ -11,7 +12,7 @@ Packages
 - Windows 10 / 11 x64: built with the current 64-bit Go toolchain.
 
 Both packages use the same DataYao protocol and work with the Android,
-HarmonyOS, and Web receivers.
+HarmonyOS, and Web receivers, and with each other (Windows to Windows).
 
 Usage
 -----
@@ -27,11 +28,29 @@ Usage
 7. Use the QR size slider when the code is too large for the camera view.
    The Full Screen button and a double-click on the QR area toggle full screen.
 
+Receiving
+---------
+
+1. Click "打开接收端" in the main window.
+2. Click "启动摄像头并接收". Allow camera access if Windows asks.
+3. Point the camera at a DataYao sender screen playing black & white QR.
+   Recommended sender settings for the native receiver: 800-1200 bytes/frame,
+   10-15 fps, ECC-L/M.
+4. Progress shows captured frames, decoded frames, and solved blocks.
+   Use "选择摄像头" or "视频格式" if the preview stays black; a 640x480 or
+   larger RGB format works best.
+5. When the transfer completes, text can be copied to the clipboard and files
+   can be saved through the standard Save dialog.
+
+The native receiver decodes standard black & white QR only. Color QR and
+Sound transfers should be received with the Android, HarmonyOS, or Web app.
+
 Limits and privacy
 ------------------
 
-- QR modes support up to 64 MB; Sound mode is limited to 64 KB and is intended
-  for short text or small files.
+- QR modes support up to 256 MB; Sound mode is limited to 64 KB and is intended
+  for short text or small files. Large transfers are recovered in memory, so
+  very old machines may prefer files under 128 MB.
 - This is a one-way screen/camera or speaker/microphone channel. The sender
   receives no ACK.
 - Transfer data is not encrypted. CRC32 and SHA-256 are integrity checks only.

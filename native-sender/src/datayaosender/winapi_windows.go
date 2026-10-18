@@ -157,6 +157,7 @@ const (
 	esAutoVScroll = 0x0040
 	esWantReturn  = 0x1000
 	esNoHideSel   = 0x0100
+	esReadOnly    = 0x0800
 
 	cbsDropDownList = 0x0003
 
@@ -222,10 +223,11 @@ const (
 	colorOnColor = 3
 	biRGB        = 0
 
-	ofNPathMustExist = 0x00000800
-	ofNFileMustExist = 0x00001000
-	ofNExplorer      = 0x00080000
-	ofNNoChangeDir   = 0x00000008
+	ofNPathMustExist  = 0x00000800
+	ofNFileMustExist  = 0x00001000
+	ofNOverwritePrompt = 0x00000002
+	ofNExplorer       = 0x00080000
+	ofNNoChangeDir    = 0x00000008
 
 	mbOK        = 0x00000000
 	mbIconError = 0x00000010
@@ -247,6 +249,9 @@ const (
 	sndMemory = 0x0004
 	sndAsync  = 0x0001
 	sndPurge  = 0x0040
+
+	gmemMoveable  = 0x0002
+	cfUnicodeText = 13
 )
 
 var (
@@ -311,15 +316,29 @@ var (
 	procGetDeviceCaps     = gdi32.NewProc("GetDeviceCaps")
 
 	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
+	procGlobalAlloc      = kernel32.NewProc("GlobalAlloc")
+	procGlobalLock       = kernel32.NewProc("GlobalLock")
+	procGlobalUnlock     = kernel32.NewProc("GlobalUnlock")
+
+	procPostMessageW   = user32.NewProc("PostMessageW")
+	procOpenClipboard  = user32.NewProc("OpenClipboard")
+	procCloseClipboard = user32.NewProc("CloseClipboard")
+	procEmptyClipboard = user32.NewProc("EmptyClipboard")
+	procSetClipboardData = user32.NewProc("SetClipboardData")
 
 	procDragAcceptFiles = shell32.NewProc("DragAcceptFiles")
 	procDragQueryFileW  = shell32.NewProc("DragQueryFileW")
 	procDragFinish      = shell32.NewProc("DragFinish")
 	procExtractIconExW  = shell32.NewProc("ExtractIconExW")
 
-	procGetOpenFileNameW     = comdlg32.NewProc("GetOpenFileNameW")
+	procGetOpenFileNameW = comdlg32.NewProc("GetOpenFileNameW")
+	procGetSaveFileNameW = comdlg32.NewProc("GetSaveFileNameW")
+
 	procInitCommonControlsEx = comctl32.NewProc("InitCommonControlsEx")
 	procPlaySoundW           = winmm.NewProc("PlaySoundW")
+
+	avicap32                     = syscall.NewLazyDLL("avicap32.dll")
+	procCapCreateCaptureWindowA = avicap32.NewProc("capCreateCaptureWindowA")
 )
 
 func rgb(red, green, blue byte) uintptr {

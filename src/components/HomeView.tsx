@@ -23,14 +23,14 @@ const downloads = [
   {
     icon: Monitor,
     title: "Windows XP / 7",
-    detail: "原生 x86 发送端 · 约 815 KB · 解压即用",
+    detail: "原生 x86 收发端 · 约 1.0 MB · 解压即用",
     href: `${RELEASE_BASE}/DataYao-0.3.0-Windows-XP-Win7-x86-Portable.zip`,
     action: "下载 Legacy",
   },
   {
     icon: Monitor,
     title: "Windows 10 / 11",
-    detail: "原生 x64 发送端 · 约 1.12 MB · 无 WebView2",
+    detail: "原生 x64 收发端 · 约 1.3 MB · 无 WebView2",
     href: `${RELEASE_BASE}/DataYao-0.3.0-Windows-Win10-Win11-x64-Portable.zip`,
     action: "下载 Modern",
   },
@@ -85,8 +85,8 @@ export function HomeView({ onSend, onReceive }: HomeViewProps) {
 
       <section className="home-facts" aria-label="DataYao 核心信息">
         <div><strong>0</strong><span>网络依赖</span></div>
-        <div><strong>64 MB</strong><span>QR 单次上限</span></div>
-        <div><strong>815 KB</strong><span>Legacy 压缩包</span></div>
+        <div><strong>256 MB</strong><span>QR 单次上限</span></div>
+        <div><strong>1.0 MB</strong><span>Legacy 压缩包</span></div>
         <div><strong>3</strong><span>离线载波模式</span></div>
       </section>
 
@@ -125,9 +125,9 @@ export function HomeView({ onSend, onReceive }: HomeViewProps) {
               接收端分别统计采集、分析、载波识别、有效帧、重复帧和恢复块。相机没出画面、二维码太密、声音无有效包或协议不匹配，不再只显示一个停住的 0%。
             </p>
             <ul>
-              <li><CheckCircle2 size={18} /> 原始摄像头帧直接送入双 Worker</li>
+              <li><CheckCircle2 size={18} /> 原始摄像头帧送入按 CPU 核心扩展的解码线程池</li>
               <li><AudioLines size={18} /> 声音帧独立校验长度与 CRC32</li>
-              <li><CheckCircle2 size={18} /> 忙时丢弃旧画面，避免延迟堆积</li>
+              <li><CheckCircle2 size={18} /> 忙时保留最新画面，避免延迟堆积</li>
               <li><CheckCircle2 size={18} /> 文本可复制，文件通过系统选择器保存</li>
             </ul>
             <button className="home-dark-action" type="button" onClick={onReceive}>

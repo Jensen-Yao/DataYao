@@ -76,14 +76,22 @@ async function decodeColor(image: ImageData): Promise<Uint8Array[]> {
   return frames;
 }
 
+// One persistent channel image per worker, rewritten in place; the ImageData
+// constructor would otherwise copy multi-megabyte buffers for every channel.
+let channelImage: ImageData | null = null;
+
 function toChannelImage(image: ImageData, channel: number): ImageData {
-  const pixels = new Uint8ClampedArray(image.data.length);
-  for (let index = 0; index < image.data.length; index += 4) {
-    const value = image.data[index + channel]!;
+  if (!channelImage || channelImage.width !== image.width || channelImage.height !== image.height) {
+    channelImage = new ImageData(image.width, image.height);
+  }
+  const pixels = channelImage.data;
+  const source = image.data;
+  for (let index = 0; index < source.length; index += 4) {
+    const value = source[index + channel]!;
     pixels[index] = value;
     pixels[index + 1] = value;
     pixels[index + 2] = value;
     pixels[index + 3] = 255;
   }
-  return new ImageData(pixels, image.width, image.height);
+  return channelImage;
 }

@@ -23,9 +23,10 @@ var (
 )
 
 const (
-	mainClassName = "DataYaoNativeMain"
-	qrClassName   = "DataYaoNativeQR"
-	dropClassName = "DataYaoNativeDrop"
+	mainClassName     = "DataYaoNativeMain"
+	qrClassName       = "DataYaoNativeQR"
+	dropClassName     = "DataYaoNativeDrop"
+	receiverClassName = "DataYaoNativeReceiver"
 
 	idModeFile = 101
 	idModeText = 102
@@ -37,6 +38,7 @@ const (
 	idFull     = 108
 	idScale    = 109
 	idCarrier  = 110
+	idRecvOpen = 111
 
 	modeFile     = 0
 	modeText     = 1
@@ -105,6 +107,7 @@ type appState struct {
 	encoder      *fountainEncoder
 	header       frameHeader
 	audioWav     []byte
+	recvButton   uintptr
 }
 
 var app appState
@@ -298,6 +301,7 @@ func registerWindowClasses() error {
 	mainCallback = syscall.NewCallback(mainWindowProc)
 	qrCallback = syscall.NewCallback(qrWindowProc)
 	dropCallback = syscall.NewCallback(dropWindowProc)
+	receiverWindowCallback = syscall.NewCallback(receiverWindowProc)
 	cursor, _, _ := procLoadCursorW.Call(0, idcArrow)
 	classes := []struct {
 		name       string
@@ -308,6 +312,7 @@ func registerWindowClasses() error {
 		{mainClassName, mainCallback, csHRedraw | csVRedraw, app.brushBackground},
 		{qrClassName, qrCallback, csHRedraw | csVRedraw | csDoubleClicks, app.brushStage},
 		{dropClassName, dropCallback, csHRedraw | csVRedraw, app.brushSurface},
+		{receiverClassName, receiverWindowCallback, csHRedraw | csVRedraw, app.brushBackground},
 	}
 	for _, item := range classes {
 		class := wndClassEx{
@@ -336,7 +341,7 @@ func createMainWindow() error {
 	screenHeight, _, _ := procGetSystemMetrics.Call(smCyScreen)
 	x := (int32(screenWidth) - width) / 2
 	y := (int32(screenHeight) - height) / 2
-	app.main = createWindow(wsExAppWindow, mainClassName, "DataYao 光学发送", wsOverlappedWindow|wsClipChildren, x, y, width, height, 0, 0, app.instance)
+	app.main = createWindow(wsExAppWindow, mainClassName, "DataYao 发送端", wsOverlappedWindow|wsClipChildren, x, y, width, height, 0, 0, app.instance)
 	if app.main == 0 {
 		return fmt.Errorf("创建主窗口失败")
 	}
@@ -410,6 +415,9 @@ func mainWindowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintpt
 		return 0
 	case wmDestroy:
 		stopTransfer(false)
+		if receiver.window != 0 {
+			procDestroyWindow.Call(receiver.window)
+		}
 		if app.fullWindow != 0 {
 			procDestroyWindow.Call(app.fullWindow)
 			app.fullWindow = 0
@@ -440,6 +448,7 @@ func createControls(hwnd uintptr) {
 	title := createLabel("发送", app.fontTitle)
 	_ = title
 	app.versionLabel = createLabel(fmt.Sprintf("DataYao %s · %s", version, buildTarget), app.font)
+	app.recvButton = createButton(idRecvOpen, "打开接收端")
 	app.modeFileButton = createButton(idModeFile, "文件")
 	app.modeTextButton = createButton(idModeText, "文本")
 	app.drop = createWindow(0, dropClassName, "", wsChild|wsVisible|wsTabStop, 0, 0, 10, 10, hwnd, 0, app.instance)
@@ -458,7 +467,7 @@ func createControls(hwnd uintptr) {
 	app.fpsCombo = createCombo(idFPS)
 	app.eccCombo = createCombo(idECC)
 	fillCombo(app.carrierCombo, []string{"黑白 QR", "彩色 QR", "声音"}, carrierQR)
-	fillCombo(app.blockCombo, []string{"800", "1200", "1600", "2000", "2300"}, 1)
+	fillCombo(app.blockCombo, []string{"800", "1200", "1600", "2000", "2300", "2920"}, 1)
 	fillCombo(app.fpsCombo, []string{"10 fps", "15 fps", "20 fps", "24 fps", "30 fps"}, 1)
 	fillCombo(app.eccCombo, []string{"L · 快速", "M · 稳定"}, 0)
 	app.rateLabel = createLabel("预计有效速度 15 KB/s", app.fontMedium)
@@ -502,8 +511,9 @@ func layoutControls(hwnd uintptr) {
 	controlHeight := px(38)
 	labelHeight := px(24)
 
-	moveWindow(app.settingLabels[0], margin, px(19), leftWidth, px(40))
-	moveWindow(app.versionLabel, margin, px(55), leftWidth, labelHeight)
+	moveWindow(app.settingLabels[0], margin, px(19), px(160), px(40))
+	moveWindow(app.versionLabel, margin, px(55), leftWidth-px(130), labelHeight)
+	moveWindow(app.recvButton, margin+leftWidth-px(124), px(19), px(124), px(34))
 	buttonWidth := (leftWidth - px(8)) / 2
 	moveWindow(app.modeFileButton, margin, px(88), buttonWidth, controlHeight)
 	moveWindow(app.modeTextButton, margin+buttonWidth+px(8), px(88), buttonWidth, controlHeight)
@@ -543,6 +553,12 @@ func layoutControls(hwnd uintptr) {
 
 func handleCommand(id, notification uint16) {
 	switch id {
+	case idRecvOpen:
+		if notification == bnClicked {
+			if err := openReceiverWindow(); err != nil {
+				messageBox(app.main, "无法打开接收端", err.Error())
+			}
+		}
 	case idModeFile:
 		if notification == bnClicked && !app.running {
 			updateMode(modeFile)
@@ -600,7 +616,7 @@ func updateMode(mode int) {
 }
 
 func readSettings() {
-	blocks := []int{800, 1200, 1600, 2000, 2300}
+	blocks := []int{800, 1200, 1600, 2000, 2300, 2920}
 	fpsValues := []int{10, 15, 20, 24, 30}
 	carrierIndex := int(sendMessage(app.carrierCombo, cbGetCurSel, 0, 0))
 	blockIndex := int(sendMessage(app.blockCombo, cbGetCurSel, 0, 0))
@@ -647,7 +663,7 @@ func updateCarrierControls() {
 	} else {
 		app.blockSize = 1200
 		app.fps = 15
-		fillCombo(app.blockCombo, []string{"800", "1200", "1600", "2000", "2300"}, 1)
+		fillCombo(app.blockCombo, []string{"800", "1200", "1600", "2000", "2300", "2920"}, 1)
 		setWindowText(app.settingLabels[3], "播放帧率")
 		setWindowText(app.settingLabels[4], "二维码纠错")
 		fillCombo(app.fpsCombo, []string{"10 fps", "15 fps", "20 fps", "24 fps", "30 fps"}, 1)
@@ -703,7 +719,7 @@ func startTransfer() {
 			return
 		}
 		if info.Size() > maxFileBytes {
-			showTransferError("文件超过限制", fmt.Sprintf("当前文件为 %s，最大支持 64 MB。", formatBytes(info.Size())))
+			showTransferError("文件超过限制", fmt.Sprintf("当前文件为 %s，最大支持 256 MB。", formatBytes(info.Size())))
 			return
 		}
 		var readErr error
@@ -725,7 +741,7 @@ func startTransfer() {
 		}
 		data = []byte(text)
 		if len(data) > maxFileBytes {
-			showTransferError("文本超过限制", "UTF-8 文本编码后超过 64 MB。")
+			showTransferError("文本超过限制", "UTF-8 文本编码后超过 256 MB。")
 			return
 		}
 		name = "datayao-text.txt"
@@ -740,11 +756,6 @@ func startTransfer() {
 	payload, err := packTransfer(name, mimeType, data, isText)
 	if err != nil {
 		showTransferError("无法准备传输", err.Error())
-		return
-	}
-	blockCount := (len(payload.container) + app.blockSize - 1) / app.blockSize
-	if blockCount > 0xffff {
-		showTransferError("每帧容量不足", "源块数量超过 65,535。请提高“每帧字节”，然后重试。")
 		return
 	}
 	sessionID := randomSessionID()
@@ -973,7 +984,7 @@ func selectFile(path string) {
 		return
 	}
 	if info.Size() > maxFileBytes {
-		showTransferError("文件超过限制", fmt.Sprintf("当前文件为 %s，最大支持 64 MB。", formatBytes(info.Size())))
+		showTransferError("文件超过限制", fmt.Sprintf("当前文件为 %s，最大支持 256 MB。", formatBytes(info.Size())))
 		return
 	}
 	app.filePath = path
@@ -1233,7 +1244,7 @@ func paintDropWindow(hwnd uintptr) {
 	procSelectObject.Call(hdc, app.fontMedium)
 	procSetTextColor.Call(hdc, rgb(34, 37, 43))
 	mainText := "选择文件或拖入此区域"
-	subText := "最大 64 MB"
+	subText := "最大 256 MB"
 	if app.carrier == carrierSound {
 		subText = "最大 64 KB"
 	}

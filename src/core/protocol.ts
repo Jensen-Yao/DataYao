@@ -1,12 +1,20 @@
 import { crc32, bytesEqual, sha256 } from "./checksum";
-import { gzipSync, gunzipSync } from "fflate";
+import { gzip, gunzip } from "fflate";
 
 export const FRAME_HEADER_SIZE = 24;
-export const MAX_FILE_BYTES = 64 * 1024 * 1024;
-export const MAX_CONTAINER_BYTES = MAX_FILE_BYTES + 64 * 1024;
+export const FRAME_HEADER_SIZE_V2 = 26;
+export const MAX_FILE_BYTES = 256 * 1024 * 1024;
+export const MAX_CONTAINER_BYTES = MAX_FILE_BYTES + 1024 * 1024;
 export const MIN_BLOCK_SIZE = 256;
-export const MAX_BLOCK_SIZE = 2400;
+// QR version 40 with ECC-L carries 2953 payload bytes; the largest frame
+// (v2 header + block) must stay below that so dense frames stay scannable.
+export const MAX_BLOCK_SIZE = 2920;
 export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION_V2 = 2;
+
+export function frameHeaderSize(version: number): number {
+  return version >= PROTOCOL_VERSION_V2 ? FRAME_HEADER_SIZE_V2 : FRAME_HEADER_SIZE;
+}
 
 const FRAME_MAGIC_0 = 0x44;
 const FRAME_MAGIC_1 = 0x59;
@@ -29,7 +37,6 @@ export interface TransferPayload {
   container: Uint8Array;
   fileName: string;
   mimeType: string;
-  originalBytes: Uint8Array;
   transmittedBytes: number;
   compressed: boolean;
   isText: boolean;
@@ -60,7 +67,7 @@ export async function packTransfer(
   isText = false,
 ): Promise<TransferPayload> {
   if (bytes.length === 0) throw new Error("不能传输空文件");
-  if (bytes.length > MAX_FILE_BYTES) throw new Error("文件超过 64 MB 限制");
+  if (bytes.length > MAX_FILE_BYTES) throw new Error("文件超过 256 MB 限制");
 
   const fileName = safeName(name);
   const type = mimeType || "application/octet-stream";
@@ -68,7 +75,11 @@ export async function packTransfer(
   let data = bytes;
   let compressed = false;
   if (bytes.length >= 512) {
-    const gzipped = gzipSync(bytes, { level: 6 });
+    // fflate's async gzip runs on its own worker pool so large files
+    // do not freeze the sender UI.
+    const gzipped = await new Promise<Uint8Array>((resolve, reject) => {
+      gzip(bytes, { level: 6 }, (error, result) => (error ? reject(error) : resolve(result)));
+    });
     if (gzipped.length + 16 < bytes.length) {
       data = gzipped;
       compressed = true;
@@ -96,7 +107,6 @@ export async function packTransfer(
     container,
     fileName,
     mimeType: type,
-    originalBytes: bytes,
     transmittedBytes: data.length,
     compressed,
     isText
@@ -115,7 +125,7 @@ export async function unpackTransfer(container: Uint8Array): Promise<TransferRes
   const nameLength = readU16(view, 6);
   const typeLength = readU16(view, 8);
   const originalLength = readU32(view, 10);
-  if (originalLength > MAX_FILE_BYTES) throw new Error("恢复文件超过 64 MB 限制");
+  if (originalLength > MAX_FILE_BYTES) throw new Error("恢复文件超过 256 MB 限制");
   const metadataEnd = CONTAINER_HEADER_SIZE + nameLength + typeLength;
   if (metadataEnd > container.length) throw new Error("传输容器元数据损坏");
   const decoder = new TextDecoder();
@@ -123,49 +133,86 @@ export async function unpackTransfer(container: Uint8Array): Promise<TransferRes
   const mimeType = decoder.decode(container.subarray(CONTAINER_HEADER_SIZE + nameLength, metadataEnd)) || "application/octet-stream";
   let bytes = container.subarray(metadataEnd);
   if ((flags & 1) !== 0) {
-    try { bytes = gunzipSync(bytes); } catch { throw new Error("压缩数据无法解压"); }
+    try {
+      bytes = await new Promise<Uint8Array>((resolve, reject) => {
+        gunzip(bytes, (error, result) => (error ? reject(error) : resolve(result)));
+      });
+    } catch {
+      throw new Error("压缩数据无法解压");
+    }
   }
   if (bytes.length !== originalLength) throw new Error("恢复文件长度校验失败");
   const expectedHash = container.subarray(14, 46);
   const actualHash = await sha256(bytes);
   if (!bytesEqual(expectedHash, actualHash)) throw new Error("SHA-256 校验失败，数据可能损坏");
-  return { fileName, mimeType, bytes: Uint8Array.from(bytes), isText: (flags & 2) !== 0, compressed: (flags & 1) !== 0 };
+  return { fileName, mimeType, bytes, isText: (flags & 2) !== 0, compressed: (flags & 1) !== 0 };
 }
 
 export function packFrame(header: FrameHeader, block: Uint8Array): Uint8Array {
-  if (header.blockCount < 1 || header.blockCount > 0xffff) throw new RangeError("blockCount 超出协议范围");
-  const frame = new Uint8Array(FRAME_HEADER_SIZE + header.blockSize);
+  if (header.blockCount < 1) throw new RangeError("blockCount 超出协议范围");
+  // v1 keeps blockCount in a u16; larger streams automatically upgrade to the
+  // v2 frame header (u32 blockCount) while receivers accept both layouts.
+  const version = header.blockCount > 0xffff ? PROTOCOL_VERSION_V2 : PROTOCOL_VERSION;
+  const headerSize = frameHeaderSize(version);
+  const frame = new Uint8Array(headerSize + header.blockSize);
   const view = new DataView(frame.buffer);
   frame[0] = FRAME_MAGIC_0;
   frame[1] = FRAME_MAGIC_1;
-  frame[2] = PROTOCOL_VERSION;
+  frame[2] = version;
   frame[3] = header.flags & 0xff;
   writeU32(view, 4, header.sessionId);
   writeU32(view, 8, header.sequence);
-  writeU16(view, 12, header.blockCount);
-  writeU16(view, 14, header.blockSize);
-  writeU32(view, 16, header.totalLength);
-  writeU32(view, 20, header.payloadCrc);
-  frame.set(block.subarray(0, header.blockSize), FRAME_HEADER_SIZE);
+  if (version === PROTOCOL_VERSION_V2) {
+    writeU32(view, 12, header.blockCount);
+    writeU16(view, 16, header.blockSize);
+    writeU32(view, 18, header.totalLength);
+    writeU32(view, 22, header.payloadCrc);
+  } else {
+    if (header.blockCount > 0xffff) throw new RangeError("blockCount 超出 v1 协议范围");
+    writeU16(view, 12, header.blockCount);
+    writeU16(view, 14, header.blockSize);
+    writeU32(view, 16, header.totalLength);
+    writeU32(view, 20, header.payloadCrc);
+  }
+  frame.set(block.subarray(0, header.blockSize), headerSize);
   return frame;
 }
 
 export function parseFrame(bytes: Uint8Array): ParsedFrame | null {
-  if (bytes.length < FRAME_HEADER_SIZE || bytes[0] !== FRAME_MAGIC_0 || bytes[1] !== FRAME_MAGIC_1 || bytes[2] !== PROTOCOL_VERSION) return null;
+  if (bytes.length < FRAME_HEADER_SIZE || bytes[0] !== FRAME_MAGIC_0 || bytes[1] !== FRAME_MAGIC_1) return null;
+  const version = bytes[2]!;
+  if (version !== PROTOCOL_VERSION && version !== PROTOCOL_VERSION_V2) return null;
+  const headerSize = frameHeaderSize(version);
+  if (bytes.length < headerSize) return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let blockCount: number;
+  let blockSize: number;
+  let totalLength: number;
+  let payloadCrc: number;
+  if (version === PROTOCOL_VERSION_V2) {
+    blockCount = view.getUint32(12, true);
+    blockSize = readU16(view, 16);
+    totalLength = view.getUint32(18, true);
+    payloadCrc = view.getUint32(22, true);
+  } else {
+    blockCount = readU16(view, 12);
+    blockSize = readU16(view, 14);
+    totalLength = view.getUint32(16, true);
+    payloadCrc = view.getUint32(20, true);
+  }
   const header: FrameHeader = {
     flags: bytes[3]!,
     sessionId: readU32(view, 4),
     sequence: readU32(view, 8),
-    blockCount: readU16(view, 12),
-    blockSize: readU16(view, 14),
-    totalLength: readU32(view, 16),
-    payloadCrc: readU32(view, 20)
+    blockCount,
+    blockSize,
+    totalLength,
+    payloadCrc
   };
   if (header.blockCount < 1 || header.blockSize < 1 || header.totalLength < 1 || header.totalLength > MAX_CONTAINER_BYTES) return null;
   if (header.totalLength > header.blockCount * header.blockSize || header.totalLength <= (header.blockCount - 1) * header.blockSize) return null;
-  if (bytes.length !== FRAME_HEADER_SIZE + header.blockSize) return null;
-  return { header, block: bytes.subarray(FRAME_HEADER_SIZE) };
+  if (bytes.length !== headerSize + header.blockSize) return null;
+  return { header, block: bytes.subarray(headerSize) };
 }
 
 export function streamKey(header: FrameHeader): string {

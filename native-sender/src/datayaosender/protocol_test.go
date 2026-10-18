@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"testing"
 )
@@ -50,5 +51,54 @@ func TestTypeScriptProtocolFixture(t *testing.T) {
 		if hex.EncodeToString(frame) != hex.EncodeToString(expected) {
 			t.Fatalf("frame %d mismatch\nwant %x\n got %x", sequence, expected, frame)
 		}
+	}
+}
+
+func TestV2FrameLayoutForLargeStreams(t *testing.T) {
+	header := frameHeader{
+		flags:       1,
+		sessionID:   0x12345678,
+		sequence:    0x89abcdef,
+		blockCount:  0x10000,
+		blockSize:   1200,
+		totalLength: 0x10000 * 1200,
+		payloadCRC:  0xdeadbeef,
+	}
+	block := make([]byte, 1200)
+	for index := range block {
+		block[index] = byte(index)
+	}
+	frame, err := packFrame(header, block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(frame) != 26+1200 {
+		t.Fatalf("v2 frame length = %d, want %d", len(frame), 26+1200)
+	}
+	if frame[2] != 2 {
+		t.Fatalf("v2 frame version byte = %d, want 2", frame[2])
+	}
+	if binary.LittleEndian.Uint32(frame[12:16]) != 0x10000 {
+		t.Fatal("v2 blockCount not stored as u32")
+	}
+	if binary.LittleEndian.Uint16(frame[16:18]) != 1200 {
+		t.Fatal("v2 blockSize mismatch")
+	}
+	if binary.LittleEndian.Uint32(frame[18:22]) != header.totalLength {
+		t.Fatal("v2 totalLength mismatch")
+	}
+	if binary.LittleEndian.Uint32(frame[22:26]) != 0xdeadbeef {
+		t.Fatal("v2 payloadCRC mismatch")
+	}
+
+	small := header
+	small.blockCount = 10
+	small.totalLength = 10 * 1200
+	frame, err = packFrame(small, block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(frame) != 24+1200 || frame[2] != 1 {
+		t.Fatalf("small stream should stay on the v1 header, got len=%d version=%d", len(frame), frame[2])
 	}
 }

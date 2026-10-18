@@ -142,7 +142,7 @@ export class LTDecoder {
   framesDuplicate = 0;
 
   constructor(readonly blockCount: number, readonly blockSize: number, readonly sessionId: number, readonly totalLength: number) {
-    if (blockCount < 1 || blockCount > 0xffff) throw new RangeError("invalid block count");
+    if (blockCount < 1 || blockCount > 0xffffffff) throw new RangeError("invalid block count");
     if (totalLength < 1 || totalLength > blockCount * blockSize || totalLength <= (blockCount - 1) * blockSize) {
       throw new RangeError("inconsistent fountain dimensions");
     }

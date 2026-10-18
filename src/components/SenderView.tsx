@@ -1,20 +1,27 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { AudioLines, File as FileIcon, FileText, Maximize2, Play, ScanLine, Square, Upload, ZoomIn, ZoomOut } from "lucide-react";
 import { audioFrameDurationMs, encodeAudioFrame, type AudioProfile } from "../core/audio";
-import { renderColorQr } from "../core/colorQr";
+import { renderMatrixToCanvas } from "../core/colorQr";
 import { LTEncoder } from "../core/fountain";
-import { makeFrameHeader, packFrame, packTransfer, type TransferPayload } from "../core/protocol";
-import { renderQr, type QrEcc } from "../core/qr";
+import { QrFrameFactory } from "../core/qrFrameFactory";
+import { MAX_FILE_BYTES, makeFrameHeader, packFrame, packTransfer, type TransferPayload } from "../core/protocol";
+import type { QrEcc } from "../core/qr";
 
-const BLOCK_OPTIONS = [800, 1200, 1600, 2000, 2300] as const;
+const BLOCK_OPTIONS = [800, 1200, 1600, 2000, 2300, 2920] as const;
 const SOUND_BLOCK_OPTIONS = [64, 96, 128] as const;
 const FPS_OPTIONS = [10, 15, 20, 24, 30] as const;
-const MAX_FILE_SIZE = 64 * 1024 * 1024;
+// QR version 40 with ECC-M only carries 2331 payload bytes per code.
+const MAX_BLOCK_FOR_ECC_M = 2300;
 
 interface LiveTransfer {
-  payload: TransferPayload;
-  encoder: LTEncoder;
-  header: ReturnType<typeof makeFrameHeader>;
+  container: Uint8Array;
+  containerBytes: number;
+  blockCount: number;
+  sessionId: number;
+  flags: number;
+  /** Sound carrier only; optical carriers generate frames in the render worker. */
+  encoder: LTEncoder | null;
+  header: ReturnType<typeof makeFrameHeader> | null;
 }
 
 type SendCarrierMode = "qr" | "color" | "sound";
@@ -50,6 +57,14 @@ export function SenderView() {
     return `${Math.round((blockSize * fps * channels) / 1.2 / 1024)} KB/s`;
   }, [audioProfile, blockSize, carrier, fps]);
 
+  // ECC-M codes carry fewer bytes per QR, so dense block sizes only stay
+  // selectable while ECC-L is active.
+  const blockCap = ecc === "M" ? MAX_BLOCK_FOR_ECC_M : BLOCK_OPTIONS[BLOCK_OPTIONS.length - 1];
+  useEffect(() => {
+    if (carrier === "sound") return;
+    if (blockSize > blockCap) setBlockSize(blockCap);
+  }, [blockCap, blockSize, carrier]);
+
   useEffect(() => {
     if (!running || !transfer || carrier === "sound" || !canvasRef.current) return;
     let animationFrame = 0;
@@ -57,26 +72,32 @@ export function SenderView() {
     let nextFrameAt = performance.now();
     let lastUiUpdate = 0;
     const interval = 1000 / fps;
+    const channels: 1 | 3 = carrier === "color" ? 3 : 1;
+    const factory = new QrFrameFactory();
+    // The worker owns the fountain encoder, frame packing, CRC and QR matrix
+    // generation from here on; this thread only blits finished matrices.
+    // start() receives a copy so dev-mode effect re-runs stay valid.
+    factory.start(transfer.container.slice(), blockSize, transfer.sessionId, transfer.flags, channels, ecc, (message) => {
+      setError(`二维码生成失败：${message}`);
+      setRunning(false);
+    });
 
     const tick = (now: number) => {
       if (now >= nextFrameAt && canvasRef.current) {
         try {
-          const channelCount = carrier === "color" ? 3 : 1;
-          const frames = Array.from({ length: channelCount }, (_value, index) => {
-            const frameSequence = sequence + index;
-            const block = transfer.encoder.encode(frameSequence);
-            return packFrame({ ...transfer.header, sequence: frameSequence }, block);
-          });
-          const rendered = carrier === "color"
-            ? renderColorQr(canvasRef.current, frames, ecc)
-            : renderQr(canvasRef.current, frames[0]!, ecc);
-          setQrVersion(rendered.version);
-          sequence += channelCount;
-          nextFrameAt = Math.max(nextFrameAt + interval, now + interval * 0.35);
-          if (now - lastUiUpdate > 300) {
-            setFrameNumber(sequence);
-            lastUiUpdate = now;
+          const job = factory.poll();
+          if (job) {
+            const rendered = renderMatrixToCanvas(canvasRef.current, job.matrices);
+            setQrVersion(rendered.version);
+            sequence = job.sequence + job.matrices.length;
+            nextFrameAt = Math.max(nextFrameAt + interval, now + interval * 0.35);
+            if (now - lastUiUpdate > 300) {
+              setFrameNumber(sequence);
+              lastUiUpdate = now;
+            }
           }
+          // No job ready yet: keep the previous QR briefly on screen; the
+          // fountain decoder treats the repeated frame as a duplicate.
         } catch (cause) {
           setError(cause instanceof Error ? cause.message : String(cause));
           setRunning(false);
@@ -86,15 +107,20 @@ export function SenderView() {
       animationFrame = requestAnimationFrame(tick);
     };
     animationFrame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(animationFrame);
-  }, [carrier, ecc, fps, running, transfer]);
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      factory.dispose();
+    };
+  }, [blockSize, carrier, ecc, fps, running, transfer]);
 
   useEffect(() => {
     if (!running || !transfer || carrier !== "sound") return;
     let cancelled = false;
     let sequence = 0;
     const context = audioContextRef.current;
-    if (!context) {
+    const encoder = transfer.encoder;
+    const header = transfer.header;
+    if (!context || !encoder || !header) {
       setError("声音引擎未启动，请停止后重试");
       setRunning(false);
       return;
@@ -102,8 +128,8 @@ export function SenderView() {
 
     const loop = async () => {
       while (!cancelled) {
-        const block = transfer.encoder.encode(sequence);
-        const frame = packFrame({ ...transfer.header, sequence }, block);
+        const block = encoder.encode(sequence);
+        const frame = packFrame({ ...header, sequence }, block);
         const pcm = encodeAudioFrame(frame, audioProfile, context.sampleRate);
         const buffer = context.createBuffer(1, pcm.length, context.sampleRate);
         buffer.copyToChannel(new Float32Array(pcm), 0);
@@ -166,10 +192,15 @@ export function SenderView() {
       }
       const payload = await packTransfer(name, mime, bytes, isText);
       const sessionId = crypto.getRandomValues(new Uint32Array(1))[0]! || 1;
-      const encoder = new LTEncoder(payload.container, blockSize, sessionId);
-      if (encoder.blockCount > 0xffff) throw new Error("当前帧容量不足，请提高每帧字节数");
-      const header = makeFrameHeader(payload.container, blockSize, sessionId, isText ? 1 : 0);
-      setTransfer({ payload, encoder, header });
+      const flags = isText ? 1 : 0;
+      const blockCount = Math.max(1, Math.ceil(payload.container.length / blockSize));
+      if (carrier === "sound") {
+        const encoder = new LTEncoder(payload.container, blockSize, sessionId);
+        const header = makeFrameHeader(payload.container, blockSize, sessionId, flags);
+        setTransfer({ container: payload.container, containerBytes: payload.container.length, blockCount, sessionId, flags, encoder, header });
+      } else {
+        setTransfer({ container: payload.container, containerBytes: payload.container.length, blockCount, sessionId, flags, encoder: null, header: null });
+      }
       setFrameNumber(0);
       setQrVersion(null);
       setRunning(true);
@@ -197,9 +228,9 @@ export function SenderView() {
 
   function chooseFile(candidate: File | undefined) {
     if (!candidate) return;
-    const limit = carrier === "sound" ? 64 * 1024 : MAX_FILE_SIZE;
+    const limit = carrier === "sound" ? 64 * 1024 : MAX_FILE_BYTES;
     if (candidate.size > limit) {
-      setError(carrier === "sound" ? "声音模式文件不能超过 64 KB" : "文件不能超过 64 MB");
+      setError(carrier === "sound" ? "声音模式文件不能超过 64 KB" : "文件不能超过 256 MB");
       return;
     }
     setError("");
@@ -238,7 +269,7 @@ export function SenderView() {
   }
 
   const selectedLabel = sourceMode === "file" ? file?.name : text.trim() ? `${new TextEncoder().encode(text).length} 字节文本` : "";
-  const blockOptions = carrier === "sound" ? SOUND_BLOCK_OPTIONS : BLOCK_OPTIONS;
+  const blockOptions = (carrier === "sound" ? SOUND_BLOCK_OPTIONS : BLOCK_OPTIONS.filter((value) => value <= blockCap)) as number[];
 
   return (
     <div className="workspace-grid">
@@ -280,7 +311,7 @@ export function SenderView() {
           >
             <Upload size={24} />
             <span>{file ? file.name : "选择或拖入文件"}</span>
-            <small>{file ? formatBytes(file.size) : carrier === "sound" ? "最大 64 KB" : "最大 64 MB"}</small>
+            <small>{file ? formatBytes(file.size) : carrier === "sound" ? "最大 64 KB" : "最大 256 MB"}</small>
             <input type="file" disabled={running} onChange={(event) => chooseFile(event.target.files?.[0])} />
           </label>
         ) : (
@@ -381,9 +412,9 @@ export function SenderView() {
         </>}
         <dl className="stage-metrics">
           <div><dt>序列</dt><dd>{frameNumber.toLocaleString()}</dd></div>
-          <div><dt>源块</dt><dd>{transfer?.encoder.blockCount.toLocaleString() ?? "—"}</dd></div>
+          <div><dt>源块</dt><dd>{transfer?.blockCount.toLocaleString() ?? "—"}</dd></div>
           <div><dt>{carrier === "sound" ? "音频" : "QR"}</dt><dd>{carrier === "sound" ? (running ? "DTMF" : "—") : qrVersion ? `V${qrVersion}-${ecc}` : "—"}</dd></div>
-          <div><dt>载荷</dt><dd>{transfer ? formatBytes(transfer.payload.container.length) : "—"}</dd></div>
+          <div><dt>载荷</dt><dd>{transfer ? formatBytes(transfer.containerBytes) : "—"}</dd></div>
         </dl>
       </section>
     </div>
