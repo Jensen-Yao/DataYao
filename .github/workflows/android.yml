@@ -28,6 +28,10 @@ jobs:
           java-version: "21"
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The legacy "tools" package was removed from the SDK repository;
+          # everything needed is installed by the sdkmanager step below.
+          packages: platform-tools
       - name: Install Android platform
         shell: bash
         run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
