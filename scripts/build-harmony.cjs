@@ -92,7 +92,11 @@ function copyArtifact() {
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.copyFileSync(artifact, output);
   fs.rmSync(archive, { force: true });
-  run("tar.exe", ["-a", "-c", "-f", archive, "-C", path.dirname(output), path.basename(output)]);
+  // bsdtar mistakes "F:\..." for a remote host; run it with a relative
+  // archive path from inside the output directory instead.
+  run("tar.exe", ["-a", "-c", "-f", path.basename(archive), path.basename(output)], {
+    cwd: path.dirname(output),
+  });
   console.log(`HarmonyOS package: ${output}`);
   console.log(`HarmonyOS archive: ${archive}`);
   console.log(unsigned
