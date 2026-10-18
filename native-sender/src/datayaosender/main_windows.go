@@ -853,14 +853,22 @@ func renderFrame(sequence uint32) error {
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
 			red, green, blue := byte(240), byte(240), byte(240)
-			if codes[0][y][x] {
-				red = 16
-			}
-			if count > 1 && codes[1][y][x] {
-				green = 16
-			}
-			if count > 2 && codes[2][y][x] {
-				blue = 16
+			if count == 1 {
+				// Black & white carrier: every channel goes dark, otherwise
+				// only-red modules render cyan with poor luma contrast.
+				if codes[0][y][x] {
+					red, green, blue = 16, 16, 16
+				}
+			} else {
+				if codes[0][y][x] {
+					red = 16
+				}
+				if codes[1][y][x] {
+					green = 16
+				}
+				if codes[2][y][x] {
+					blue = 16
+				}
 			}
 			pixels[y*size+x] = uint32(blue) | uint32(green)<<8 | uint32(red)<<16
 		}
